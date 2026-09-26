@@ -145,7 +145,7 @@ App.dom = (function () {
    */
   var BOTTOM_BARS =
     ".draw-hint,.cut-toolbar,.merge-toolbar,.trim-toolbar,.outline-toolbar," +
-    ".notes-toolbar";
+    ".notes-toolbar,.field-live";
 
   /**
    * Set or clear the `has-map-bar` flag on <body> to match what is currently

@@ -205,3 +205,107 @@ def test_walk_can_pause_resume_finish_and_store_leaflet_count(client):
     body = finished.get_json()["walk"]
     assert body["revision"] == 4
     assert body["finished_at"]
+
+
+def test_walk_writes_are_owned_by_operator_unless_admin(client):
+    admin = bootstrap(client)
+    helper = client.post(
+        "/service/field/people",
+        json={
+            "name": "Chloe",
+            "username": "chloe",
+            "password": "leaflets-123",
+            "role": "field",
+        },
+    ).get_json()["person"]
+    campaign = client.post(
+        "/service/field/campaigns", json={"name": "Ownership", "status": "active"}
+    ).get_json()["campaign"]
+
+    client.post("/service/field/auth/logout")
+    assert client.post(
+        "/service/field/auth/login",
+        json={"username": "chloe", "password": "leaflets-123"},
+    ).status_code == 200
+    walk = client.post(
+        "/service/field/sessions",
+        json={
+            "id": "walk_chloe",
+            "campaign_id": campaign["id"],
+            "participant_ids": [helper["id"]],
+        },
+    ).get_json()["walk"]
+    assert walk["id"] == "walk_chloe"
+
+    client.post("/service/field/auth/logout")
+    client.post(
+        "/service/field/auth/login",
+        json={"username": "tom", "password": "correct-horse"},
+    )
+    # Admin may recover/complete another operator's walk.
+    assert client.patch(
+        "/service/field/sessions/walk_chloe",
+        json={"status": "paused", "expected_revision": 1},
+    ).status_code == 200
+
+    # A second normal field account may not mutate Chloe's trace.
+    other = client.post(
+        "/service/field/people",
+        json={
+            "name": "Lizette",
+            "username": "lizette",
+            "password": "leaflets-456",
+            "role": "field",
+        },
+    ).get_json()["person"]
+    assert other["id"]
+    client.post("/service/field/auth/logout")
+    client.post(
+        "/service/field/auth/login",
+        json={"username": "lizette", "password": "leaflets-456"},
+    )
+    assert client.post(
+        "/service/field/sessions/walk_chloe/points",
+        json={
+            "points": [
+                {"id": "wrong_user", "seq": 1, "lat": 52.6, "lon": 1.7}
+            ]
+        },
+    ).status_code == 403
+    assert client.put(
+        "/service/field/sessions/walk_chloe/roads",
+        json={"roads": []},
+    ).status_code == 403
+
+
+def test_finished_walk_cannot_be_resumed(client):
+    bootstrap(client)
+    campaign = client.post(
+        "/service/field/campaigns", json={"name": "State machine", "status": "active"}
+    ).get_json()["campaign"]
+    walk = client.post(
+        "/service/field/sessions", json={"campaign_id": campaign["id"]}
+    ).get_json()["walk"]
+    finished = client.patch(
+        f"/service/field/sessions/{walk['id']}",
+        json={"status": "finished", "expected_revision": 1},
+    )
+    assert finished.status_code == 200
+    resumed = client.patch(
+        f"/service/field/sessions/{walk['id']}",
+        json={"status": "active", "expected_revision": 2},
+    )
+    assert resumed.status_code == 409
+
+
+def test_bad_json_shape_and_bad_participant_shape_are_400(client):
+    bootstrap(client)
+    campaign = client.post(
+        "/service/field/campaigns", json={"name": "Validation", "status": "active"}
+    ).get_json()["campaign"]
+    assert client.post("/service/field/campaigns", json=[]).status_code == 400
+    response = client.post(
+        "/service/field/sessions",
+        json={"campaign_id": campaign["id"], "participant_ids": "not-an-array"},
+    )
+    assert response.status_code == 400

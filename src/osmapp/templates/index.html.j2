@@ -292,6 +292,10 @@
          section and tpl-toolbar-button per action, so the grouping is
          defined in a JS array rather than in this markup. -->
 
+    <template id="tpl-field-live">
+      <div class="field-live" role="status" aria-live="polite"></div>
+    </template>
+
     <template id="tpl-toolbar-panel">
       <div class="tb-panel" role="toolbar" aria-label="Tools">
         <button
@@ -2100,6 +2104,7 @@
     <script defer src="{{ url_for('static', filename='js/print.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/boundary.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/history.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/field.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/controls.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/demo.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/tour.js') }}"></script>

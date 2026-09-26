@@ -19,14 +19,26 @@ from pathlib import Path
 from typing import Any, Callable, TypeVar, cast
 
 import click
-from flask import Blueprint, Flask, Response, g, jsonify, request, session
+from flask import Blueprint, Flask, g, jsonify, request, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 bp = Blueprint("distribution", __name__, url_prefix="/service/field")
 F = TypeVar("F", bound=Callable[..., Any])
+
+
+@bp.errorhandler(ValueError)
+def _validation_error(exc: ValueError):
+    return jsonify(error=str(exc)), 400
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _STATUSES = {"planned", "active", "paused", "finished", "cancelled"}
 _CAMPAIGN_STATUSES = {"draft", "active", "finished", "archived"}
+_ALLOWED_WALK_TRANSITIONS = {
+    "planned": {"planned", "active", "cancelled"},
+    "active": {"active", "paused", "finished", "cancelled"},
+    "paused": {"paused", "active", "finished", "cancelled"},
+    "finished": {"finished"},
+    "cancelled": {"cancelled"},
+}
 
 SCHEMA = """
 PRAGMA foreign_keys = ON;
@@ -216,6 +228,21 @@ def _json() -> dict[str, Any]:
 
 def _row(row: sqlite3.Row | None) -> dict[str, Any] | None:
     return dict(row) if row is not None else None
+
+
+def _editable_walk(
+    db: sqlite3.Connection, session_id: str
+) -> tuple[sqlite3.Row | None, tuple[Any, int] | None]:
+    """Return a walk the current user may mutate, or an HTTP error tuple."""
+    row = db.execute(
+        "SELECT * FROM distribution_sessions WHERE id=?", (session_id,)
+    ).fetchone()
+    if row is None:
+        return None, (jsonify(error="Walk session not found."), 404)
+    user = g.field_user
+    if user["role"] != "admin" and row["started_by_user_id"] != user["id"]:
+        return None, (jsonify(error="This walk belongs to another operator."), 403)
+    return row, None
 
 
 def _current_user() -> dict[str, Any] | None:
@@ -563,17 +590,38 @@ def walk_sessions():
             campaign_id = _id(data.get("campaign_id"), field="campaign id")
         except ValueError as exc:
             return jsonify(error=str(exc)), 400
-        participant_ids = list(dict.fromkeys(str(x) for x in data.get("participant_ids", [])))
+        raw_participants = data.get("participant_ids", [])
+        if not isinstance(raw_participants, list):
+            return jsonify(error="participant_ids must be an array."), 400
+        participant_ids = list(dict.fromkeys(str(x) for x in raw_participants))
         if not participant_ids:
             participant_ids = [g.field_user["person_id"]]
         started_at, now = str(data.get("started_at") or _now()), _now()
         device_id = str(data.get("device_id", "browser"))[:128] or "browser"
+        territory_id = data.get("territory_id")
+        project_id = data.get("project_id")
         with connect() as db:
             existing = db.execute("SELECT * FROM distribution_sessions WHERE id=?", (session_id,)).fetchone()
             if existing:
+                if (
+                    g.field_user["role"] != "admin"
+                    and existing["started_by_user_id"] != g.field_user["id"]
+                ):
+                    return jsonify(error="That offline walk id belongs to another operator."), 403
                 return jsonify(walk=dict(existing), duplicate=True)
             if not db.execute("SELECT 1 FROM campaigns WHERE id=?", (campaign_id,)).fetchone():
                 return jsonify(error="Campaign not found."), 404
+            if territory_id:
+                territory = db.execute(
+                    "SELECT campaign_id FROM campaign_territories WHERE id=? AND active=1",
+                    (territory_id,),
+                ).fetchone()
+                if territory is None or territory["campaign_id"] != campaign_id:
+                    return jsonify(error="Territory is not part of this campaign."), 400
+            if project_id and not db.execute(
+                "SELECT 1 FROM projects WHERE id=?", (project_id,)
+            ).fetchone():
+                return jsonify(error="Project not found."), 400
             marks = ",".join("?" for _ in participant_ids)
             found = {r["id"] for r in db.execute(
                 f"SELECT id FROM people WHERE active=1 AND id IN ({marks})", participant_ids
@@ -585,7 +633,7 @@ def walk_sessions():
                    id,campaign_id,territory_id,project_id,started_by_user_id,device_id,status,
                    started_at,created_at,updated_at) VALUES(?,?,?,?,?,?, 'active', ?,?,?)""",
                 (
-                    session_id, campaign_id, data.get("territory_id"), data.get("project_id"),
+                    session_id, campaign_id, territory_id, project_id,
                     g.field_user["id"], device_id, started_at, now, now,
                 ),
             )
@@ -626,9 +674,14 @@ def update_walk_session(session_id: str):
     if status not in _STATUSES:
         return jsonify(error="Invalid session status."), 400
     with connect() as db:
-        current = db.execute("SELECT * FROM distribution_sessions WHERE id=?", (session_id,)).fetchone()
-        if not current:
-            return jsonify(error="Walk session not found."), 404
+        current, denied = _editable_walk(db, session_id)
+        if denied:
+            return denied
+        assert current is not None
+        if status not in _ALLOWED_WALK_TRANSITIONS.get(current["status"], set()):
+            return jsonify(
+                error=f"Cannot move a {current['status']} walk to {status}."
+            ), 409
         expected = data.get("expected_revision")
         if expected is not None and int(expected) != current["revision"]:
             return jsonify(error="Walk session changed on another device.", current=dict(current)), 409
@@ -666,8 +719,10 @@ def add_points(session_id: str):
     now = _now()
     try:
         with connect() as db:
-            if not db.execute("SELECT 1 FROM distribution_sessions WHERE id=?", (session_id,)).fetchone():
-                return jsonify(error="Walk session not found."), 404
+            current, denied = _editable_walk(db, session_id)
+            if denied:
+                return denied
+            assert current is not None
             for point in points:
                 if not isinstance(point, dict):
                     raise ValueError("Invalid GPS point.")
@@ -736,8 +791,10 @@ def put_road_coverage(session_id: str):
         return jsonify(error="roads must be an array of at most 10000 items."), 400
     now = _now()
     with connect() as db:
-        if not db.execute("SELECT 1 FROM distribution_sessions WHERE id=?", (session_id,)).fetchone():
-            return jsonify(error="Walk session not found."), 404
+        current, denied = _editable_walk(db, session_id)
+        if denied:
+            return denied
+        assert current is not None
         for road in roads:
             if not isinstance(road, dict):
                 continue
@@ -760,10 +817,10 @@ def put_road_coverage(session_id: str):
 def init_app(app: Flask) -> None:
     init_database()
     app.secret_key = _secret_key()
-    app.config.setdefault("PERMANENT_SESSION_LIFETIME", timedelta(days=30))
-    app.config.setdefault("SESSION_COOKIE_HTTPONLY", True)
-    app.config.setdefault("SESSION_COOKIE_SAMESITE", "Lax")
-    app.config.setdefault("SESSION_COOKIE_SECURE", os.environ.get("OSMAPP_COOKIE_SECURE") == "1")
+    app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["SESSION_COOKIE_SECURE"] = os.environ.get("OSMAPP_COOKIE_SECURE") == "1"
     app.register_blueprint(bp)
 
     @app.cli.command("field-user")

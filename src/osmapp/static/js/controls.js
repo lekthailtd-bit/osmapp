@@ -143,6 +143,25 @@ App.controls = (function () {
 
   var GROUPS = [
     {
+      key: "field",
+      titleKey: "toolbar.groupField",
+      buttons: [
+        {
+          id: "field",
+          icon: "fa-person-walking",
+          labelKey: "toolbar.labelField",
+          titleKey: "toolbar.field",
+          accent: "green",
+          active: function () {
+            return !!(App.field && App.field.isOpen());
+          },
+          onClick: function () {
+            App.field.open();
+          },
+        },
+      ],
+    },
+    {
       key: "area",
       titleKey: "toolbar.groupArea",
       buttons: [
