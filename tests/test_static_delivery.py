@@ -218,7 +218,7 @@ def test_the_page_loads_the_bundle_where_the_build_step_ran(
 
     body = app.test_client().get("/").get_data(as_text=True)
 
-    assert body.count("<script defer src=") == 1
+    assert body.count('<script data-cfasync="false" defer src=') == 1
     assert APP_BUNDLE in body
     assert APP_STYLESHEET in body
     assert "js/main.js" not in body
@@ -232,7 +232,7 @@ def test_the_page_loads_the_sources_where_it_did_not(
 
     body = app.test_client().get("/").get_data(as_text=True)
 
-    assert body.count("<script defer src=") > 30
+    assert body.count('<script data-cfasync="false" defer src=') > 30
     assert "js/main.js" in body
     assert APP_BUNDLE not in body
 

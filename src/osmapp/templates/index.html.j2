@@ -31,7 +31,7 @@
     <link rel="alternate" hreflang="{{ code }}" href="{{ path }}" />
     {% endfor -%}
     <link rel="alternate" hreflang="x-default" href="{{ lang_paths['en'] }}" />
-    <script>
+    <script data-cfasync="false">
       // The server inlines the language dictionary here so the page renders
       // already translated — no extra fetch needed before first paint.
       window.APP_LANG = {{ lang | tojson }};
@@ -63,8 +63,8 @@
       rel="stylesheet"
       href="{{ url_for('static', filename='vendor/unpkg.com/leaflet/dist/leaflet.css') }}"
     />
-    <script src="{{ url_for('static', filename='vendor/unpkg.com/leaflet/dist/leaflet.js') }}"></script>
-    <script src="{{ url_for('static', filename='vendor/cdn.jsdelivr.net/npm/turf/turf/turf.min.js') }}"></script>
+    <script data-cfasync="false" src="{{ url_for('static', filename='vendor/unpkg.com/leaflet/dist/leaflet.js') }}"></script>
+    <script data-cfasync="false" src="{{ url_for('static', filename='vendor/cdn.jsdelivr.net/npm/turf/turf/turf.min.js') }}"></script>
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='vendor/cdnjs.cloudflare.com/ajax/libs/font-awesome/css/all.min.css') }}"
@@ -107,7 +107,7 @@
         </p>
       </div>
     </div>
-    <script>
+    <script data-cfasync="false">
       // The splash is markup rather than something JS puts up, because the
       // load it covers is the one that might not bring the app in. Which is
       // also why its way down cannot be the app's alone: where main.js never
@@ -2052,64 +2052,64 @@
     </template>
 
     <!-- Vendor -->
-    <script src="{{ url_for('static', filename='vendor/cdn.jsdelivr.net/npm/leaflet-editable/src/Leaflet.Editable.min.js') }}"></script>
+    <script data-cfasync="false" src="{{ url_for('static', filename='vendor/cdn.jsdelivr.net/npm/leaflet-editable/src/Leaflet.Editable.min.js') }}"></script>
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='vendor/cdn.jsdelivr.net/npm/leaflet-control-geocoder/dist/Control.Geocoder.css') }}"
     />
-    <script src="{{ url_for('static', filename='vendor/cdn.jsdelivr.net/npm/leaflet-control-geocoder/dist/Control.Geocoder.min.js') }}"></script>
+    <script data-cfasync="false" src="{{ url_for('static', filename='vendor/cdn.jsdelivr.net/npm/leaflet-control-geocoder/dist/Control.Geocoder.min.js') }}"></script>
 
     <!-- App modules — load order matters (state first, main last) -->
     {%- if app_bundle %}
     <!-- Every module under static/js, minified and concatenated in load
          order by `npm run bundle`; see scripts/build-app-assets.js. -->
-    <script defer src="{{ url_for('static', filename=app_bundle) }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename=app_bundle) }}"></script>
     {%- else %}
-    <script defer src="{{ url_for('static', filename='js/util.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/i18n.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/state.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/store.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/dom.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/shortcuts.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/util.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/i18n.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/state.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/store.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/dom.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/shortcuts.js') }}"></script>
     <!-- Must load before trim.js and outline.js: both build their keyboard
          context at load time and request the eraser shortcut from this
          module. -->
-    <script defer src="{{ url_for('static', filename='js/vertices.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/basemap.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/geometry.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/spatial.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/balance.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/coverage.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/network.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/ui.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/polygons.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/labels.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/naming.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/vertices.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/basemap.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/geometry.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/spatial.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/balance.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/coverage.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/network.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/ui.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/polygons.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/labels.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/naming.js') }}"></script>
     <!-- Must load before its callers: data.js uses it when importing a card
          and print.js uses it when composing one. Neither resolves it at load
          time, but a shared dependency belongs ahead of its consumers. -->
-    <script defer src="{{ url_for('static', filename='js/pdfdoc.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/data.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/session.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/clustering.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/editing.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/trim.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/outline.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/gaps.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/footprints.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/autoheal.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/pdfdoc.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/data.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/session.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/clustering.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/editing.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/trim.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/outline.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/gaps.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/footprints.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/autoheal.js') }}"></script>
     <!-- Before print.js, which asks it for what to draw on a card. -->
-    <script defer src="{{ url_for('static', filename='js/notes.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/print-filters.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/print.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/boundary.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/history.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/field.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/controls.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/demo.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/tour.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/pwa.js') }}"></script>
-    <script defer src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/notes.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/print-filters.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/print.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/boundary.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/history.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/field.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/controls.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/demo.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/tour.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/pwa.js') }}"></script>
+    <script data-cfasync="false" defer src="{{ url_for('static', filename='js/main.js') }}"></script>
     {%- endif %}
   </body>
 </html>
