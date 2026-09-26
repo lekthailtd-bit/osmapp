@@ -8,8 +8,8 @@ Canonical product decisions remain in [field-distribution-decisions.md](./field-
 
 - **Ledger implementation:** ~95% — all explicit SETTLED field-distribution behaviours inspected are implemented on the integration branch; most INFERRED V1 behaviours are also present.
 - **Automated verification:** ~92% — 692/692 JavaScript tests and 125/125 non-E2E Python tests pass after the Cloudflare delivery fix; the critical multi-participant field workflow passes in Chromium.
-- **Deployment readiness:** ~88% — the app is live over HTTPS on the integration server with persistent SQLite storage and verified online backups. Remaining work is operational hardening and real-device field validation.
-- **Overall V1 release readiness:** ~92% — feature-complete enough for controlled field use, but not yet a clean “finished” release until the branch/release record is consolidated and real-device GPS/offline behaviour is soaked.
+- **Deployment readiness:** ~94% — the app is live over HTTPS on the integration server with persistent SQLite storage, verified online backups, and a successful restore drill. Remaining work is real-device field validation and routine capacity monitoring.
+- **Overall V1 release readiness:** ~95% — the implementation and release record are consolidated; the remaining substantive validation gap is a real-device GPS/offline/reconnect soak.
 
 ## Verified against the ledger
 
@@ -53,16 +53,19 @@ Current integration-server deployment:
 - Daily SQLite backup at 03:15 UTC.
 - Backup uses SQLite's online backup API, runs `PRAGMA integrity_check`, and retains 14 days.
 
-Operational risk found during this audit: the integration host root filesystem was approximately **93% full**. Resolve this before treating the host as a low-maintenance canonical data store.
+During this audit the integration host root filesystem was approximately **93% full**. Disposable npm/uv/apt caches were cleared without touching application data or the Playwright browser cache, reducing usage to approximately **85%** (about 1.6 GB free). Continue monitoring capacity as this host carries canonical data.
 
 ## Remaining release work
 
 ### Must do before calling V1 finished
 
-1. Consolidate QC commits into the actual feature PR and retire the duplicate “do not merge” PR.
-2. Real-device soak: start a walk, lose connectivity, keep walking, restore connectivity, verify ordered sync and session recovery.
-3. Free/increase disk capacity on the integration host and confirm backup headroom.
-4. Perform one restore drill from a generated SQLite backup.
+1. Real-device soak: start a walk, lose connectivity, keep walking, restore connectivity, verify ordered sync and session recovery.
+2. Make the final release/merge decision after that soak.
+
+Completed during this audit:
+- QC/reliability commits consolidated into PR #1; duplicate PR #2 closed.
+- Integration-host disk usage reduced from ~93% to ~85% by clearing disposable caches.
+- Backup restore drill passed from a copied backup: SQLite integrity `ok` and expected field tables present.
 
 ### Open product decisions — do not silently settle from code defaults
 
