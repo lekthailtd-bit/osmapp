@@ -244,6 +244,7 @@ App.field = (function () {
   function close() {
     _open = false;
     _root.hidden = true;
+    _renderLive();
     if (App.controls) App.controls.refresh();
   }
 
@@ -667,7 +668,7 @@ App.field = (function () {
   function _renderLive() {
     if (!_live) return;
     var walk = _activeWalk();
-    if (!walk) {
+    if (!walk || _open) {
       _setLiveVisible(false);
       return;
     }
@@ -1008,7 +1009,10 @@ App.field = (function () {
     _renderLiveTrace();
     _startWatch();
     _requestWakeLock();
-    _render();
+    // The drawer has the same walk controls while it is open. Once a walk
+    // starts, give the map back to the operator and let the compact live bar
+    // own pause/resume/finish. Reopening the drawer hides that bar again.
+    close();
     _syncAll().catch(function () {});
   }
 

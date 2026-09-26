@@ -101,3 +101,21 @@ test("offline queues sync only under the operator who recorded them", () => {
   assert.equal(f.walkOwnedByUser(walk, { id: "user_chloe" }), false);
   assert.equal(f.walkOwnedByUser({}, { id: "user_tom" }), false);
 });
+
+
+test("starting a walk hands active controls from the drawer to the live bar", () => {
+  const source = readFileSync(
+    new URL("../../src/osmapp/static/js/field.js", import.meta.url),
+    "utf8",
+  );
+  const renderLive = source.slice(
+    source.indexOf("function _renderLive()"),
+    source.indexOf("function _val("),
+  );
+  const startWalk = source.slice(
+    source.indexOf("function _startWalk()"),
+    source.indexOf("function _statusQueue("),
+  );
+  assert.match(renderLive, /if \(!walk \|\| _open\)/);
+  assert.match(startWalk, /_requestWakeLock\(\);[\s\S]*close\(\);/);
+});
