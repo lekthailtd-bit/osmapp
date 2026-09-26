@@ -998,7 +998,7 @@ App.field = (function () {
       serverCreated: false,
       points: [],
       syncedCount: 0,
-      pendingStatus: null,
+      pendingStatuses: [],
       roads: null,
       roadsSynced: false,
     };
@@ -1012,15 +1012,26 @@ App.field = (function () {
     _syncAll().catch(function () {});
   }
 
+  function _statusQueue(walk) {
+    if (!Array.isArray(walk.pendingStatuses)) walk.pendingStatuses = [];
+    // Migrate a walk saved by the first field build without discarding its
+    // unsynced transition.
+    if (walk.pendingStatus) {
+      walk.pendingStatuses.push(walk.pendingStatus);
+      walk.pendingStatus = null;
+    }
+    return walk.pendingStatuses;
+  }
+
   function _setWalkStatus(status) {
     var walk = _activeWalk();
     if (!walk) return;
     walk.status = status;
-    walk.pendingStatus = {
+    _statusQueue(walk).push({
       status: status,
       event_id: _uuid("event"),
       recorded_at: new Date().toISOString(),
-    };
+    });
     if (status === "paused") {
       _stopWatch();
       _releaseWakeLock();
@@ -1042,13 +1053,13 @@ App.field = (function () {
     walk.status = "finished";
     walk.finished_at = new Date().toISOString();
     walk.leaflet_count = count;
-    walk.pendingStatus = {
+    _statusQueue(walk).push({
       status: "finished",
       event_id: _uuid("event"),
       recorded_at: walk.finished_at,
       finished_at: walk.finished_at,
       leaflet_count: count,
-    };
+    });
     _stopWatch();
     _releaseWakeLock();
     _calculateRoadCoverage(walk);
@@ -1223,16 +1234,18 @@ App.field = (function () {
         walk.syncedCount = walk.points.length;
       });
     });
-    chain = chain.then(function () {
-      if (!walk.pendingStatus) return;
-      var body = Object.assign({}, walk.pendingStatus);
+    chain = chain.then(function _syncNextStatus() {
+      var statuses = _statusQueue(walk);
+      if (!statuses.length) return;
+      var body = Object.assign({}, statuses[0]);
       if (walk.revision != null) body.expected_revision = walk.revision;
       return _api("/sessions/" + encodeURIComponent(walk.id), {
         method: "PATCH",
         body: body,
       }).then(function (res) {
         walk.revision = res.walk.revision;
-        walk.pendingStatus = null;
+        statuses.shift();
+        return _persist().then(_syncNextStatus);
       });
     });
     chain = chain.then(function () {
@@ -1249,7 +1262,7 @@ App.field = (function () {
         walk.status === "finished" &&
         walk.serverCreated &&
         walk.syncedCount === walk.points.length &&
-        !walk.pendingStatus &&
+        !_statusQueue(walk).length &&
         (walk.roadsSynced || !walk.roads)
       ) {
         c.queue = c.queue.filter(function (x) {
@@ -1534,6 +1547,7 @@ App.field = (function () {
       distanceM: _distanceM,
       traceDistance: _traceDistance,
       roadKey: _roadKey,
+      statusQueue: _statusQueue,
     },
   };
 })();

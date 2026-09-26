@@ -65,3 +65,30 @@ test("central project replacement suspends ordinary session autosave", () => {
   assert.match(openProject, /App\.data\.applyPayload/);
   assert.match(openProject, /finally[\s\S]*App\.session\.setSuspended\(false\)/);
 });
+
+
+test("offline walk status queue preserves every transition in order", () => {
+  const f = module();
+  const walk = {
+    pendingStatuses: [
+      { status: "paused", event_id: "pause_1" },
+      { status: "active", event_id: "resume_1" },
+      { status: "finished", event_id: "finish_1" },
+    ],
+  };
+  assert.deepEqual(
+    f.statusQueue(walk).map((event) => event.status),
+    ["paused", "active", "finished"],
+  );
+});
+
+test("legacy single pending status migrates into the ordered queue once", () => {
+  const f = module();
+  const legacy = {
+    pendingStatus: { status: "paused", event_id: "pause_old" },
+  };
+  assert.equal(f.statusQueue(legacy).length, 1);
+  assert.equal(f.statusQueue(legacy).length, 1);
+  assert.equal(legacy.pendingStatus, null);
+  assert.equal(legacy.pendingStatuses[0].event_id, "pause_old");
+});
