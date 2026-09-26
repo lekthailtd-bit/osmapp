@@ -92,3 +92,12 @@ test("legacy single pending status migrates into the ordered queue once", () => 
   assert.equal(legacy.pendingStatus, null);
   assert.equal(legacy.pendingStatuses[0].event_id, "pause_old");
 });
+
+
+test("offline queues sync only under the operator who recorded them", () => {
+  const f = module();
+  const walk = { operator: { id: "user_tom" } };
+  assert.equal(f.walkOwnedByUser(walk, { id: "user_tom" }), true);
+  assert.equal(f.walkOwnedByUser(walk, { id: "user_chloe" }), false);
+  assert.equal(f.walkOwnedByUser({}, { id: "user_tom" }), false);
+});

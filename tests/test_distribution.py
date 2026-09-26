@@ -89,6 +89,29 @@ def test_people_can_exist_without_accounts_and_walk_together(client):
     assert [p["name"] for p in listed[0]["participants"]] == ["Tom", "Chloe"]
 
 
+
+
+def test_walk_cannot_claim_a_different_authenticated_operator(client):
+    user = bootstrap(client)
+    campaign = client.post(
+        "/service/field/campaigns", json={"name": "Attribution", "status": "active"}
+    ).get_json()["campaign"]
+
+    response = client.post(
+        "/service/field/sessions",
+        json={
+            "id": "walk_wrong_operator",
+            "campaign_id": campaign["id"],
+            "participant_ids": [user["person_id"]],
+            "started_by_user_id": "user_someone_else",
+        },
+    )
+    assert response.status_code == 403
+    assert client.get(
+        f"/service/field/sessions?campaign_id={campaign['id']}"
+    ).get_json()["sessions"] == []
+
+
 def test_project_writes_require_the_revision_the_editor_loaded(client):
     bootstrap(client)
     created = client.post(

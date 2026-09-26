@@ -660,6 +660,9 @@ def walk_sessions():
             participant_ids = [g.field_user["person_id"]]
         started_at, now = str(data.get("started_at") or _now()), _now()
         device_id = str(data.get("device_id", "browser"))[:128] or "browser"
+        claimed_operator = data.get("started_by_user_id")
+        if claimed_operator is not None and str(claimed_operator) != g.field_user["id"]:
+            return jsonify(error="Offline walk belongs to another operator."), 403
         territory_id = data.get("territory_id")
         project_id = data.get("project_id")
         with connect() as db:

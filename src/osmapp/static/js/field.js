@@ -1170,15 +1170,24 @@ App.field = (function () {
     _wakeLock = null;
   }
 
+  function _walkOwnedByUser(walk, user) {
+    return !!(walk && walk.operator && user && walk.operator.id === user.id);
+  }
+
   function _syncAll() {
     if (_syncing || !c.user || !navigator.onLine) return Promise.resolve();
     _syncing = true;
     var chain = Promise.resolve();
-    c.queue.slice().forEach(function (walk) {
-      chain = chain.then(function () {
-        return _syncWalk(walk);
+    c.queue
+      .slice()
+      .filter(function (walk) {
+        return _walkOwnedByUser(walk, c.user);
+      })
+      .forEach(function (walk) {
+        chain = chain.then(function () {
+          return _syncWalk(walk);
+        });
       });
-    });
     if (c.projectDirty && c.currentProject) {
       chain = chain.then(function () {
         return _saveProject(false);
@@ -1216,6 +1225,7 @@ App.field = (function () {
             project_id: walk.project_id,
             device_id: walk.device_id,
             participant_ids: walk.participant_ids,
+            started_by_user_id: walk.operator && walk.operator.id,
             started_at: walk.started_at,
           },
         }).then(function (body) {
@@ -1548,6 +1558,7 @@ App.field = (function () {
       traceDistance: _traceDistance,
       roadKey: _roadKey,
       statusQueue: _statusQueue,
+      walkOwnedByUser: _walkOwnedByUser,
     },
   };
 })();
