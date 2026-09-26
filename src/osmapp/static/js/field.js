@@ -659,17 +659,22 @@ App.field = (function () {
     );
   }
 
+  function _setLiveVisible(visible) {
+    _live.hidden = !visible;
+    if (App.dom && App.dom.syncBottomBars) App.dom.syncBottomBars();
+  }
+
   function _renderLive() {
     if (!_live) return;
     var walk = _activeWalk();
     if (!walk) {
-      _live.hidden = true;
+      _setLiveVisible(false);
       return;
     }
     var pending = Math.max(0, walk.points.length - (walk.syncedCount || 0));
     var campaign = walk.campaign_name || "Campaign";
     var who = (walk.participant_names || []).join(" + ");
-    _live.hidden = false;
+    _setLiveVisible(true);
     _live.innerHTML =
       '<div class="field-live__main"><strong>Walking: ' +
       _esc(who) +
@@ -730,12 +735,13 @@ App.field = (function () {
       c.selectedTerritoryId = e.target.value;
       _persist();
     } else if (role === "participant") {
-      var values = Array.prototype.slice
-        .call(_root.querySelectorAll('[data-role="participant"]:checked'))
-        .map(function (n) {
-          return n.value;
-        });
-      c.selectedParticipants = values;
+      var participantId = e.target.value;
+      var participantIndex = c.selectedParticipants.indexOf(participantId);
+      if (e.target.checked && participantIndex < 0) {
+        c.selectedParticipants.push(participantId);
+      } else if (!e.target.checked && participantIndex >= 0) {
+        c.selectedParticipants.splice(participantIndex, 1);
+      }
       _persist();
       _render();
     } else if (role === "person-login") {

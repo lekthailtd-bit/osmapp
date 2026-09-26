@@ -159,10 +159,11 @@ App.dom = (function () {
   function _syncBottomBars() {
     if (!document.querySelector || !document.body || !document.body.classList)
       return;
-    document.body.classList.toggle(
-      "has-map-bar",
-      !!document.querySelector(BOTTOM_BARS),
-    );
+    var bars = document.querySelectorAll(BOTTOM_BARS);
+    var visible = Array.prototype.some.call(bars, function (node) {
+      return !node.hidden;
+    });
+    document.body.classList.toggle("has-map-bar", visible);
   }
 
   /**
@@ -227,6 +228,7 @@ App.dom = (function () {
     render: render,
     mount: mount,
     mountOnMap: mountOnMap,
+    syncBottomBars: _syncBottomBars,
     role: role,
     text: text,
     toggle: toggle,
