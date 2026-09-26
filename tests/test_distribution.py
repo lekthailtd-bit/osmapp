@@ -14,6 +14,7 @@ from osmapp import create_app
 def app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Flask:
     monkeypatch.setenv("OSMAPP_DB_PATH", str(tmp_path / "field.sqlite3"))
     monkeypatch.setenv("OSMAPP_SECRET_KEY", "test-only-secret")
+    monkeypatch.setenv("OSMAPP_ALLOW_WEB_BOOTSTRAP", "1")
     app = create_app()
     app.config.update(TESTING=True)
     return app
@@ -58,6 +59,68 @@ def test_first_account_bootstraps_once_and_login_persists(client):
     )
     assert good.status_code == 200
     assert good.get_json()["user"]["name"] == "Tom"
+
+
+def test_web_bootstrap_requires_explicit_opt_in(app, monkeypatch):
+    monkeypatch.delenv("OSMAPP_ALLOW_WEB_BOOTSTRAP")
+    client = app.test_client()
+    assert client.get("/service/field/auth/status").get_json()["bootstrap_allowed"] is False
+    denied = client.post(
+        "/service/field/auth/bootstrap",
+        json={"name": "Tom", "username": "tom", "password": "correct-horse"},
+    )
+    assert denied.status_code == 403
+    assert client.get("/service/field/auth/status").get_json()["configured"] is False
+
+
+def test_field_account_can_read_management_data_and_write_own_walk_but_not_manage(client):
+    bootstrap(client)
+    campaign = client.post(
+        "/service/field/campaigns", json={"name": "Admin campaign", "status": "active"}
+    ).get_json()["campaign"]
+    project = client.post(
+        "/service/field/projects", json={"name": "Admin project", "payload": {"version": 3}}
+    ).get_json()["project"]
+    person = client.post(
+        "/service/field/people",
+        json={"name": "Chloe", "username": "chloe", "password": "leaflets-123"},
+    ).get_json()["person"]
+    client.post("/service/field/auth/logout")
+    assert client.post(
+        "/service/field/auth/login",
+        json={"username": "chloe", "password": "leaflets-123"},
+    ).status_code == 200
+
+    assert client.get("/service/field/campaigns").status_code == 200
+    assert client.get("/service/field/projects").status_code == 200
+    assert client.get(f"/service/field/projects/{project['id']}").status_code == 200
+    assert client.get(f"/service/field/territories?campaign_id={campaign['id']}").status_code == 200
+    management_writes = [
+        client.post("/service/field/campaigns", json={"name": "Unauthorized"}),
+        client.patch(f"/service/field/campaigns/{campaign['id']}", json={"status": "finished"}),
+        client.post("/service/field/projects", json={"name": "Unauthorized", "payload": {}}),
+        client.put(f"/service/field/projects/{project['id']}", json={"expected_revision": 1, "payload": {}}),
+        client.put(
+            f"/service/field/campaigns/{campaign['id']}/territories/territory_1",
+            json={"label": "Unauthorized", "geometry": {"type": "Polygon", "coordinates": []}},
+        ),
+        client.post("/service/field/people", json={"name": "Unauthorized"}),
+    ]
+    assert [r.status_code for r in management_writes] == [403] * len(management_writes)
+    assert client.get(f"/service/field/projects/{project['id']}").get_json()["project"]["revision"] == 1
+    assert client.get("/service/field/campaigns").get_json()["campaigns"][0]["status"] == "active"
+
+    walk = client.post(
+        "/service/field/sessions",
+        json={"campaign_id": campaign["id"], "participant_ids": [person["id"]]},
+    )
+    assert walk.status_code == 201
+    walk_id = walk.get_json()["walk"]["id"]
+    assert client.post(
+        f"/service/field/sessions/{walk_id}/points",
+        json={"points": [{"id": "point_1", "seq": 0, "lat": 52.6, "lon": 1.7}]},
+    ).status_code == 200
+    assert client.patch(f"/service/field/sessions/{walk_id}", json={"status": "finished"}).status_code == 200
 
 
 def test_people_can_exist_without_accounts_and_walk_together(client):

@@ -79,5 +79,7 @@ def test_field_walk_supports_one_operator_and_multiple_participants(app_page: Pa
     # points/status/derived coverage, then refreshes the shared campaign view.
     live.locator('[data-action="finish"]').click()
     expect(live).to_be_hidden()
+    page.locator('[data-action="field"]').click()
+    expect(drawer).to_be_visible()
     expect(drawer.locator(".field-metrics")).to_contain_text("1")
     expect(drawer.locator(".field-history-list")).to_contain_text("Tom + Chloe")

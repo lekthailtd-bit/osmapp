@@ -23,6 +23,10 @@ App.field = (function () {
   var _syncTimer = null;
   var _projectTimer = null;
   var _syncing = false;
+  var _syncRequested = false;
+  var _syncPromise = null;
+  var _persistQueue = Promise.resolve();
+  var _storageError = false;
   var _coverageLayers = null;
   var _liveLayer = null;
   var _liveMarker = null;
@@ -36,6 +40,7 @@ App.field = (function () {
 
   var c = {
     configured: null,
+    bootstrap_allowed: false,
     user: null,
     people: [],
     campaigns: [],
@@ -116,7 +121,7 @@ App.field = (function () {
   }
 
   function _persist() {
-    return App.store.set(STORE_KEY, {
+    var snapshot = {
       configured: c.configured,
       user: c.user,
       people: c.people,
@@ -131,6 +136,22 @@ App.field = (function () {
       activeWalkId: c.activeWalkId,
       queue: c.queue,
       filters: c.filters,
+    };
+    // IndexedDB writes to the same key can otherwise commit out of order.
+    // Snapshot now, then serialize commits; one failed write must not prevent
+    // a later attempt from recovering the whole queue.
+    var write = _persistQueue.catch(function () {}).then(function () {
+      return App.store.set(STORE_KEY, snapshot, { required: true });
+    });
+    _persistQueue = write;
+    return write.then(function () {
+      _storageError = false;
+    }, function (err) {
+      _storageError = true;
+      _stopWatch();
+      c.lastError = "Local storage failed — walk recording stopped. Keep this page open and retry.";
+      _renderLive();
+      throw err;
     });
   }
 
@@ -168,7 +189,7 @@ App.field = (function () {
               if (res.status === 401) {
                 c.user = null;
                 c.lastError = "Sign in required to sync";
-                _persist();
+                _persist().catch(function () {});
               }
               throw err;
             }
@@ -267,6 +288,7 @@ App.field = (function () {
     return _api("/auth/status")
       .then(function (status) {
         c.configured = status.configured;
+        c.bootstrap_allowed = !!status.bootstrap_allowed;
         c.user = status.user;
         if (status.user) c.people = status.people || [];
         if (!status.user) return null;
@@ -442,16 +464,19 @@ App.field = (function () {
       '<select data-role="campaign">' +
       campaignOptions +
       "</select>" +
-      '<div class="field-row"><input data-role="new-campaign" placeholder="New campaign name">' +
-      '<button type="button" class="btn btn--ghost" data-action="new-campaign">Create</button></div></section>' +
+      (c.user.role === "admin"
+        ? '<div class="field-row"><input data-role="new-campaign" placeholder="New campaign name">' +
+          '<button type="button" class="btn btn--ghost" data-action="new-campaign">Create</button></div>'
+        : "") + '</section>' +
       '<section class="field-card"><h3>Central map project</h3>' +
       '<select data-role="project">' +
       projectOptions +
       "</select>" +
       '<div class="field-row"><button type="button" class="btn btn--ghost" data-action="open-project">Open selected</button>' +
-      '<button type="button" class="btn btn--ghost" data-action="save-project">' +
-      (c.currentProject ? "Save current" : "Save as new") +
-      "</button></div>" +
+      (c.user.role === "admin"
+        ? '<button type="button" class="btn btn--ghost" data-action="save-project">' +
+          (c.currentProject ? "Save current" : "Save as new") + "</button>"
+        : "") + "</div>" +
       (c.currentProject
         ? '<p class="field-hint">Current: ' +
           _esc(c.currentProject.name) +
@@ -477,9 +502,11 @@ App.field = (function () {
       '<select data-role="territory">' +
       territoryOptions +
       "</select>" +
-      '<button type="button" class="btn btn--ghost field-wide" data-action="sync-territories"' +
-      (!c.selectedCampaignId || !s.clusters || !s.clusters.length ? " disabled" : "") +
-      ">Assign current map territories to campaign</button></section>" +
+      (c.user.role === "admin"
+        ? '<button type="button" class="btn btn--ghost field-wide" data-action="sync-territories"' +
+          (!c.selectedCampaignId || !s.clusters || !s.clusters.length ? " disabled" : "") +
+          ">Assign current map territories to campaign</button>"
+        : "") + "</section>" +
       _renderWalkCard() +
       _renderCoverageCard() +
       "</div>";
@@ -489,6 +516,10 @@ App.field = (function () {
 
   function _renderAuth() {
     if (c.configured === false) {
+      if (!c.bootstrap_allowed) {
+        return '<div class="field-drawer__body"><section class="field-card"><h3>Administrator setup required</h3>' +
+          '<p class="field-hint">Ask the server administrator to create the first account, then sign in.</p></section></div>';
+      }
       return (
         '<div class="field-drawer__body"><section class="field-card"><h3>Set up the first account</h3>' +
         '<p class="field-hint">This first account becomes the administrator.</p>' +
@@ -573,10 +604,9 @@ App.field = (function () {
         if (!old || Number(r.covered_m) > Number(old.covered_m)) road[r.road_key] = r;
       });
     });
-    var covered = Object.keys(road).filter(function (key) {
+    var matched = Object.keys(road).filter(function (key) {
       return Number(road[key].covered_m) > 0;
     }).length;
-    if (c.roadStats.total) covered = c.roadStats.covered;
 
     var sessions =
       '<option value="">All sessions</option>' +
@@ -639,9 +669,9 @@ App.field = (function () {
       "</strong><span>sessions</span></div><div><strong>" +
       (distance / 1000).toFixed(1) +
       "</strong><span>km walked</span></div><div><strong>" +
-      covered +
-      (c.roadStats.total ? "/" + c.roadStats.total : "") +
-      "</strong><span>roads covered</span></div></div>" +
+      matched +
+      "</strong><span>provisional road matches</span></div></div>" +
+      '<p class="field-hint">Road matches use the street data cached when each walk ended. They do not prove that every address or the whole road was delivered. Unmatched roads may have no street data or GPS evidence.</p>' +
       '<div class="field-grid"><select data-role="filter-person">' +
       people +
       '</select><select data-role="filter-territory">' +
@@ -832,7 +862,7 @@ App.field = (function () {
   }
 
   function projectDirty() {
-    if (!c.currentProject) return;
+    if (!c.currentProject || !c.user || c.user.role !== "admin") return;
     c.projectDirty = true;
     c.currentProject.pendingWriteId = _uuid("write");
     _persist();
@@ -843,7 +873,7 @@ App.field = (function () {
   }
 
   function _saveProject(interactive) {
-    if (!c.user) return Promise.resolve();
+    if (!c.user || c.user.role !== "admin") return Promise.resolve();
     _ensureFieldIds();
     var payload = App.data.buildPayload();
     if (!c.currentProject) {
@@ -1005,15 +1035,18 @@ App.field = (function () {
     };
     c.queue.push(walk);
     c.activeWalkId = walk.id;
-    _persist();
     _renderLiveTrace();
-    _startWatch();
-    _requestWakeLock();
     // The drawer has the same walk controls while it is open. Once a walk
     // starts, give the map back to the operator and let the compact live bar
     // own pause/resume/finish. Reopening the drawer hides that bar again.
     close();
-    _syncAll().catch(function () {});
+    _persist().then(function () {
+      if (_activeWalk() === walk && walk.status === "active") {
+        _startWatch();
+        _requestWakeLock();
+      }
+      return _syncAll();
+    }).catch(function () {});
   }
 
   function _statusQueue(walk) {
@@ -1039,13 +1072,15 @@ App.field = (function () {
     if (status === "paused") {
       _stopWatch();
       _releaseWakeLock();
-    } else if (status === "active") {
-      _startWatch();
-      _requestWakeLock();
     }
-    _persist();
     _render();
-    _syncAll().catch(function () {});
+    _persist().then(function () {
+      if (status === "active" && walk.status === "active") {
+        _startWatch();
+        _requestWakeLock();
+      }
+      return _syncAll();
+    }).catch(function () {});
   }
 
   function _finishWalk() {
@@ -1068,9 +1103,8 @@ App.field = (function () {
     _releaseWakeLock();
     _calculateRoadCoverage(walk);
     c.activeWalkId = null;
-    _persist();
     _render();
-    _syncAll().then(_refreshCampaignData).catch(function () {});
+    _persist().then(_syncAll).then(_refreshCampaignData).then(_render).catch(function () {});
   }
 
   function _startWatch() {
@@ -1115,14 +1149,15 @@ App.field = (function () {
     }
     walk.points.push(point);
     c.lastError = "";
-    _persist();
     _appendLivePoint(point);
     _renderLive();
-    clearTimeout(_syncTimer);
-    _syncTimer = setTimeout(function () {
-      _syncAll().catch(function () {});
-    }, 4000);
-    if (walk.points.length - (walk.syncedCount || 0) >= 20) _syncAll().catch(function () {});
+    _persist().then(function () {
+      clearTimeout(_syncTimer);
+      _syncTimer = setTimeout(function () {
+        _syncAll().catch(function () {});
+      }, 4000);
+      if (walk.points.length - (walk.syncedCount || 0) >= 20) _syncAll().catch(function () {});
+    }).catch(function () {});
   }
 
   function _renderLiveTrace() {
@@ -1179,9 +1214,18 @@ App.field = (function () {
   }
 
   function _syncAll() {
-    if (_syncing || !c.user || !navigator.onLine) return Promise.resolve();
+    if (_syncing) {
+      _syncRequested = true;
+      var current = _syncPromise;
+      return current.then(function () {
+        // The in-flight pass starts one more pass for changes queued while it
+        // ran. Callers awaiting sync must wait for that pass as well.
+        if (_syncPromise !== current) return _syncPromise;
+      });
+    }
+    if (_storageError || !c.user || !navigator.onLine) return Promise.resolve();
     _syncing = true;
-    var chain = Promise.resolve();
+    var chain = _persistQueue;
     c.queue
       .slice()
       .filter(function (walk) {
@@ -1197,7 +1241,7 @@ App.field = (function () {
         return _saveProject(false);
       });
     }
-    return chain
+    _syncPromise = chain
       .then(function () {
         c.online = true;
         return _persist();
@@ -1206,14 +1250,20 @@ App.field = (function () {
         function (value) {
           _syncing = false;
           _render();
+          if (_syncRequested) {
+            _syncRequested = false;
+            _syncAll().catch(function () {});
+          }
           return value;
         },
         function (err) {
           _syncing = false;
+          _syncRequested = false;
           _render();
           throw err;
         },
       );
+    return _syncPromise;
   }
 
   function _syncWalk(walk) {
@@ -1239,27 +1289,32 @@ App.field = (function () {
       });
     }
     chain = chain.then(function () {
-      var pending = walk.points.slice(walk.syncedCount || 0);
+      return _persistQueue;
+    }).then(function () {
+      var start = walk.syncedCount || 0;
+      var pending = walk.points.slice(start);
       if (!pending.length) return;
       return _api("/sessions/" + encodeURIComponent(walk.id) + "/points", {
         method: "POST",
         body: { points: pending },
       }).then(function () {
-        walk.syncedCount = walk.points.length;
+        walk.syncedCount = start + pending.length;
       });
     });
     chain = chain.then(function _syncNextStatus() {
-      var statuses = _statusQueue(walk);
-      if (!statuses.length) return;
-      var body = Object.assign({}, statuses[0]);
-      if (walk.revision != null) body.expected_revision = walk.revision;
-      return _api("/sessions/" + encodeURIComponent(walk.id), {
-        method: "PATCH",
-        body: body,
-      }).then(function (res) {
-        walk.revision = res.walk.revision;
-        statuses.shift();
-        return _persist().then(_syncNextStatus);
+      return _persistQueue.then(function () {
+        var statuses = _statusQueue(walk);
+        if (!statuses.length) return;
+        var body = Object.assign({}, statuses[0]);
+        if (walk.revision != null) body.expected_revision = walk.revision;
+        return _api("/sessions/" + encodeURIComponent(walk.id), {
+          method: "PATCH",
+          body: body,
+        }).then(function (res) {
+          walk.revision = res.walk.revision;
+          statuses.shift();
+          return _persist().then(_syncNextStatus);
+        });
       });
     });
     chain = chain.then(function () {
@@ -1300,7 +1355,9 @@ App.field = (function () {
 
   function _calculateRoadCoverage(walk) {
     if (!window.turf || walk.points.length < 2 || !s.cachedStreets) {
-      walk.roads = [];
+      // Null means no derivation was possible. An empty array means a known
+      // street dataset was checked and contained no matched segments.
+      walk.roads = null;
       return;
     }
     var trace = turf.lineString(
@@ -1355,14 +1412,25 @@ App.field = (function () {
     walk.roadsSynced = false;
   }
 
+  function _territoryHasTrace(territory, sessions) {
+    if (!window.turf || !territory || !territory.geometry) return false;
+    return sessions.some(function (walk) {
+      return (walk.points || []).some(function (p) {
+        try {
+          return turf.booleanPointInPolygon(turf.point([p.lon, p.lat]), territory.geometry);
+        } catch (_) {
+          return false;
+        }
+      });
+    });
+  }
+
   function _drawCoverage() {
     if (!_coverageLayers || !_map) return;
     _coverageLayers.clearLayers();
     var sessions = _filteredCoverage();
     var roadKeys = {};
-    var usedTerritories = {};
     sessions.forEach(function (walk) {
-      if (walk.territory_id) usedTerritories[walk.territory_id] = true;
       var pts = walk.points || [];
       if (pts.length > 1) {
         L.polyline(
@@ -1398,18 +1466,20 @@ App.field = (function () {
         c.filters.territory !== t.id
       )
         return;
-      var done = !!usedTerritories[t.id];
+      // Assignment alone says nothing about where the operator actually went.
+      // Even a trace inside the boundary does not prove full delivery.
+      var recorded = _territoryHasTrace(t, sessions);
       L.geoJSON({ type: "Feature", geometry: t.geometry, properties: {} }, {
         pane: "fieldPane",
         style: {
-          color: done ? "#2e7d32" : "#c62828",
+          color: recorded ? "#1565c0" : "#757575",
           weight: 2,
           opacity: 0.65,
           fillOpacity: 0.025,
-          dashArray: done ? null : "7 7",
+          dashArray: recorded ? null : "7 7",
         },
       })
-        .bindTooltip(t.label + (done ? " · walked" : " · not walked"))
+        .bindTooltip(t.label + (recorded ? " · GPS recorded inside" : " · no GPS recorded inside"))
         .addTo(_coverageLayers);
     });
 
@@ -1442,8 +1512,8 @@ App.field = (function () {
             style: function (feature) {
               var covered = !!roadKeys[_roadKey(feature)];
               return covered
-                ? { color: "#1b5e20", weight: 7, opacity: 0.72 }
-                : { color: "#c62828", weight: 3, opacity: 0.42, dashArray: "5 7" };
+                ? { color: "#1565c0", weight: 7, opacity: 0.72 }
+                : { color: "#757575", weight: 3, opacity: 0.42, dashArray: "5 7" };
             },
           },
         ).addTo(_coverageLayers);
@@ -1561,8 +1631,12 @@ App.field = (function () {
       distanceM: _distanceM,
       traceDistance: _traceDistance,
       roadKey: _roadKey,
+      territoryHasTrace: _territoryHasTrace,
       statusQueue: _statusQueue,
       walkOwnedByUser: _walkOwnedByUser,
+      state: c,
+      syncWalk: _syncWalk,
+      persist: _persist,
     },
   };
 })();

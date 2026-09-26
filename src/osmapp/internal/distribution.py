@@ -317,11 +317,18 @@ def auth_status():
         configured = bool(db.execute("SELECT 1 FROM users LIMIT 1").fetchone())
         user = _current_user()
         people = _people(db) if user else []
-    return jsonify(configured=configured, user=user, people=people)
+    return jsonify(
+        configured=configured,
+        bootstrap_allowed=os.environ.get("OSMAPP_ALLOW_WEB_BOOTSTRAP") == "1",
+        user=user,
+        people=people,
+    )
 
 
 @bp.post("/auth/bootstrap")
 def auth_bootstrap():
+    if os.environ.get("OSMAPP_ALLOW_WEB_BOOTSTRAP") != "1":
+        return jsonify(error="Web setup is disabled. Create the first administrator with flask field-user."), 403
     data = _json()
     username = str(data.get("username", "")).strip()
     name = str(data.get("name", "")).strip()
@@ -413,6 +420,8 @@ def people():
 @bp.route("/campaigns", methods=["GET", "POST"])
 @require_auth
 def campaigns():
+    if request.method == "POST" and g.field_user["role"] != "admin":
+        return jsonify(error="Administrator access required."), 403
     with connect() as db:
         if request.method == "GET":
             rows = db.execute(
@@ -439,7 +448,7 @@ def campaigns():
 
 
 @bp.patch("/campaigns/<campaign_id>")
-@require_auth
+@require_admin
 def update_campaign(campaign_id: str):
     try:
         campaign_id = _id(campaign_id)
@@ -474,6 +483,8 @@ def update_campaign(campaign_id: str):
 @bp.route("/projects", methods=["GET", "POST"])
 @require_auth
 def projects():
+    if request.method == "POST" and g.field_user["role"] != "admin":
+        return jsonify(error="Administrator access required."), 403
     with connect() as db:
         if request.method == "GET":
             rows = db.execute(
@@ -521,7 +532,7 @@ def get_project(project_id: str):
 
 
 @bp.put("/projects/<project_id>")
-@require_auth
+@require_admin
 def put_project(project_id: str):
     data = _json()
     payload = data.get("payload")
@@ -575,7 +586,7 @@ def territories():
 
 
 @bp.put("/campaigns/<campaign_id>/territories/<territory_id>")
-@require_auth
+@require_admin
 def put_territory(campaign_id: str, territory_id: str):
     data = _json()
     try:

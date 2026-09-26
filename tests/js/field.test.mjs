@@ -52,6 +52,39 @@ test("fallback road key depends on geometry and name, not response order", () =>
   );
 });
 
+test("territory evidence comes from GPS positions, not a session assignment", () => {
+  const turf = {
+    point: (coordinates) => ({ coordinates }),
+    booleanPointInPolygon: (point) =>
+      point.coordinates[0] >= 1 && point.coordinates[0] <= 2,
+  };
+  const { field } = loadApp(["field.js"], {
+    window: { App: {}, turf },
+    turf,
+    navigator: { onLine: true },
+  });
+  const territory = { id: "territory_1", geometry: { type: "Polygon" } };
+  assert.equal(field._test.territoryHasTrace(territory, [{
+    territory_id: territory.id,
+    points: [{ lon: 3, lat: 52 }],
+  }]), false);
+  assert.equal(field._test.territoryHasTrace(territory, [{
+    territory_id: "territory_other",
+    points: [{ lon: 1.5, lat: 52 }],
+  }]), true);
+  assert.equal(field._test.territoryHasTrace(territory, []), false);
+});
+
+test("coverage UI does not declare a whole territory or road complete", () => {
+  const source = readFileSync(
+    new URL("../../src/osmapp/static/js/field.js", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(source, /· (?:not )?walked["']/);
+  assert.match(source, /provisional road matches/);
+  assert.match(source, /no GPS recorded inside/);
+});
+
 test("central project replacement suspends ordinary session autosave", () => {
   const source = readFileSync(
     new URL("../../src/osmapp/static/js/field.js", import.meta.url),
@@ -117,5 +150,62 @@ test("starting a walk hands active controls from the drawer to the live bar", ()
     source.indexOf("function _statusQueue("),
   );
   assert.match(renderLive, /if \(!walk \|\| _open\)/);
-  assert.match(startWalk, /_requestWakeLock\(\);[\s\S]*close\(\);/);
+  assert.match(startWalk, /close\(\);[\s\S]*_persist\(\)\.then[\s\S]*_startWatch\(\)/);
+});
+
+test("a GPS sample arriving during point upload remains queued", async () => {
+  const originalFetch = globalThis.fetch;
+  const first = { id: "point_1", seq: 0, lat: 52.6, lon: 1.7 };
+  const second = { id: "point_2", seq: 1, lat: 52.61, lon: 1.7 };
+  const walk = { id: "walk_1", status: "active", serverCreated: true,
+    points: [first], syncedCount: 0, pendingStatuses: [], roads: null };
+  const writes = [];
+  // The server receives the first point; GPS appends the second while the
+  // upload is in flight. A live-array-length acknowledgement would lose it.
+  globalThis.fetch = async (_url, options) => {
+    const sent = JSON.parse(options.body).points;
+    assert.deepEqual(sent.map((p) => p.id), ["point_1"]);
+    walk.points.push(second);
+    return { ok: true, json: async () => ({ received: 1 }) };
+  };
+  try {
+    const loaded = loadApp(["field.js"], { window: { App: { store: {
+      set: async (_key, value) => { writes.push(structuredClone(value)); },
+    } } }, navigator: { onLine: true } });
+    loaded.field._test.state.queue = [walk];
+    await loaded.field._test.syncWalk(walk);
+    assert.equal(walk.syncedCount, 1);
+    assert.equal(walk.points.length, 2);
+    assert.deepEqual(writes.at(-1).queue[0].points.map((p) => p.id), ["point_1", "point_2"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("field snapshots commit in order even if IndexedDB writes are delayed", async () => {
+  const commits = [];
+  let release;
+  const blocked = new Promise((resolve) => { release = resolve; });
+  let calls = 0;
+  const loaded = loadApp(["field.js"], { window: { App: { store: {
+    set: async (_key, value) => {
+      if (++calls === 1) await blocked;
+      commits.push(structuredClone(value));
+    },
+  } } }, navigator: { onLine: false } });
+  const f = loaded.field._test;
+  f.state.selectedCampaignId = "first";
+  const first = f.persist();
+  f.state.selectedCampaignId = "second";
+  const second = f.persist();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls, 1, "the second write must wait for the first transaction");
+  release();
+  await Promise.all([first, second]);
+  assert.deepEqual(commits.map((v) => v.selectedCampaignId), ["first", "second"]);
+});
+
+test("required field writes reject if IndexedDB cannot open", async () => {
+  const app = loadApp(["store.js"], { window: { App: {} }, console: { warn() {} } });
+  await assert.rejects(app.store.set("field:client", {}, { required: true }));
 });
