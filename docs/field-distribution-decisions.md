@@ -32,7 +32,9 @@ _Last updated: 2026-09-26_
 ### Distribution sessions
 - **SETTLED:** A field user starts/stops a distribution session.
 - **SETTLED:** Session stores GPS trace, timestamps, and campaign association.
-- **INFERRED:** Session may also store user/device, distance, duration, and leaflet count.
+- **SETTLED:** A session records one or more human participants separately from the authenticated terminal user.
+- **SETTLED:** One terminal can record a walk for 2–3 (or more) people walking together without creating duplicate GPS traces.
+- **INFERRED:** Session also stores authenticated user/device, distance, duration, and leaflet count.
 - **INFERRED:** Pause/resume is supported.
 
 ### Live GPS tracking
@@ -62,8 +64,14 @@ _Last updated: 2026-09-26_
 - **INFERRED:** Existing browser projects can eventually sync centrally as well as campaign data.
 
 ### Users / devices
-- **INFERRED:** Lightweight user/device identity sufficient to attribute sessions.
+- **SETTLED:** User authentication is required: the system must know who is operating the terminal.
+- **SETTLED:** Authentication identity and walk participants are separate concepts.
+- **SETTLED:** Before starting a walk, the operator can select multiple participants who are physically walking together on that terminal/session.
+- **SETTLED:** The GPS trace belongs to the distribution session and is linked to all selected participants; do not duplicate the trace per person.
+- **INFERRED:** Remember the most recently selected participant set on a device, but require an explicit confirmation at Start so yesterday's walkers are not silently attributed.
 - **INFERRED:** Field UI should not require repeated full login during a round.
+- **INFERRED:** Users should have individual accounts; shared terminal credentials are not the preferred model.
+- **INFERRED:** Participant records may include active/inactive status so former staff remain attributable in historical sessions.
 - **DEFERRED:** Complex HR/permission system unless deployment needs it.
 
 ### Field usability
@@ -98,7 +106,7 @@ _Last updated: 2026-09-26_
 ## Open decisions
 
 - Campaign/territory relationship and whether territories can be reused across campaigns.
-- Exact user/device authentication model.
+- Exact authentication mechanism (e.g. password/passkey/PIN/session duration) and role model.
 - GPS sampling policy (time/distance thresholds).
 - Definition of “road covered” and handling of walking one side of a road.
 - Whether central storage of existing osmapp project geometry is part of V1 or a follow-on.
