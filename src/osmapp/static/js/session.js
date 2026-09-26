@@ -109,6 +109,7 @@ App.session = (function () {
   function markDirty(opts) {
     if (_restoring || _suspended) return; // neither is a user edit
     if (opts && opts.data) _dataDirty = true;
+    if (App.field) App.field.projectDirty(opts);
     clearTimeout(_timer);
     _timer = setTimeout(_save, DEBOUNCE_MS);
   }
