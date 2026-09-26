@@ -59,8 +59,8 @@ _Last updated: 2026-09-26_
 ### Central storage and sync
 - **SETTLED:** Server/database is canonical; IndexedDB is offline cache/outbox.
 - **SETTLED:** GPS/session events should be append-friendly and resumable.
-- **INFERRED:** PostgreSQL behind the existing Flask application.
-- **INFERRED:** Stable IDs and revision/version fields prevent accidental overwrite/conflicts.
+- **SETTLED:** SQLite behind the existing Flask application is the canonical central database for V1; do not add PostgreSQL/service overhead for this small internal user base.
+- **SETTLED:** Stable IDs and revision/version fields prevent accidental overwrite/conflicts.
 - **INFERRED:** Existing browser projects can eventually sync centrally as well as campaign data.
 
 ### Users / devices
