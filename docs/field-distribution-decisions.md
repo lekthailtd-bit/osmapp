@@ -60,6 +60,7 @@ _Last updated: 2026-09-26_
 - **SETTLED:** Server/database is canonical; IndexedDB is offline cache/outbox.
 - **SETTLED:** GPS/session events should be append-friendly and resumable.
 - **SETTLED:** SQLite behind the existing Flask application is the canonical central database for V1; do not add PostgreSQL/service overhead for this small internal user base.
+- **SETTLED:** V1 is deployed on Lek Thai's own integration server with persistent host storage for the canonical SQLite database and HTTPS access; do not use an ephemeral Heroku filesystem for canonical field data.
 - **SETTLED:** Stable IDs and revision/version fields prevent accidental overwrite/conflicts.
 - **INFERRED:** Existing browser projects can eventually sync centrally as well as campaign data.
 
@@ -105,9 +106,9 @@ _Last updated: 2026-09-26_
 
 ## Open decisions
 
-- Campaign/territory relationship and whether territories can be reused across campaigns.
-- Exact authentication mechanism (e.g. password/passkey/PIN/session duration) and role model.
-- GPS sampling policy (time/distance thresholds).
-- Definition of “road covered” and handling of walking one side of a road.
-- Whether central storage of existing osmapp project geometry is part of V1 or a follow-on.
-- Whether leaflet counts are entered manually, estimated, or omitted.
+- Campaign/territory relationship and whether territories can be reused across campaigns. **Current implementation default:** a source territory may be assigned to more than one campaign.
+- Exact authentication mechanism (e.g. password/passkey/PIN/session duration) and role model. **Current implementation default:** password-backed sessions with `admin` and `field` roles.
+- GPS sampling policy (time/distance thresholds). **Current implementation default:** reject accuracy worse than 75 m; record after 6 m movement or 30 s.
+- Definition of “road covered” and handling of walking one side of a road. **Current implementation default:** provisional OSM road matching only; raw GPS remains authoritative.
+- Whether central storage of existing osmapp project geometry is part of V1 or a follow-on. **Current implementation:** central project revision/sync support already exists.
+- Whether leaflet counts are entered manually, estimated, or omitted. **Current implementation default:** manual count at Finish.
