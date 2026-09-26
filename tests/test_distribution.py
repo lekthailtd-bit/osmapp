@@ -86,7 +86,7 @@ def test_people_can_exist_without_accounts_and_walk_together(client):
         f"/service/field/sessions?campaign_id={campaign['id']}"
     ).get_json()["sessions"]
     assert len(listed) == 1
-    assert {p["name"] for p in listed[0]["participants"]} == {"Tom", "Chloe"}
+    assert [p["name"] for p in listed[0]["participants"]] == ["Tom", "Chloe"]
 
 
 def test_project_writes_require_the_revision_the_editor_loaded(client):

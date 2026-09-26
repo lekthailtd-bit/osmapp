@@ -121,6 +121,7 @@ CREATE INDEX IF NOT EXISTS idx_distribution_sessions_campaign
 CREATE TABLE IF NOT EXISTS session_participants (
     session_id TEXT NOT NULL REFERENCES distribution_sessions(id) ON DELETE CASCADE,
     person_id TEXT NOT NULL REFERENCES people(id),
+    position INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY(session_id, person_id)
 );
 
@@ -220,6 +221,22 @@ def connect() -> sqlite3.Connection:
 def init_database() -> None:
     with connect() as db:
         db.executescript(SCHEMA)
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(session_participants)")}
+        if "position" not in columns:
+            db.execute(
+                "ALTER TABLE session_participants ADD COLUMN position INTEGER NOT NULL DEFAULT 0"
+            )
+            rows = list(db.execute(
+                "SELECT rowid,session_id FROM session_participants ORDER BY session_id,rowid"
+            ))
+            positions: dict[str, int] = {}
+            for row in rows:
+                position = positions.get(row["session_id"], 0)
+                db.execute(
+                    "UPDATE session_participants SET position=? WHERE rowid=?",
+                    (position, row["rowid"]),
+                )
+                positions[row["session_id"]] = position + 1
 
 
 def _json() -> dict[str, Any]:
@@ -617,7 +634,7 @@ def _participant_rows(db: sqlite3.Connection, session_ids: list[str]) -> dict[st
     rows = db.execute(
         f"""SELECT sp.session_id,p.id,p.name FROM session_participants sp
             JOIN people p ON p.id=sp.person_id WHERE sp.session_id IN ({marks})
-            ORDER BY p.name COLLATE NOCASE""",
+            ORDER BY sp.session_id,sp.position,p.name COLLATE NOCASE""",
         session_ids,
     )
     for row in rows:
@@ -683,8 +700,8 @@ def walk_sessions():
                 ),
             )
             db.executemany(
-                "INSERT INTO session_participants(session_id,person_id) VALUES(?,?)",
-                [(session_id, p) for p in participant_ids],
+                "INSERT INTO session_participants(session_id,person_id,position) VALUES(?,?,?)",
+                [(session_id, p, i) for i, p in enumerate(participant_ids)],
             )
             db.execute(
                 "INSERT INTO session_events(session_id,event_id,event_type,recorded_at) VALUES(?,?, 'start', ?)",
