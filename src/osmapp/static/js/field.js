@@ -165,6 +165,11 @@ App.field = (function () {
               var err = new Error(body.error || "Request failed (" + res.status + ")");
               err.status = res.status;
               err.body = body;
+              if (res.status === 401) {
+                c.user = null;
+                c.lastError = "Sign in required to sync";
+                _persist();
+              }
               throw err;
             }
             c.online = true;
@@ -769,7 +774,9 @@ App.field = (function () {
       .then(function (body) {
         c.user = body.user;
         if (!c.selectedParticipants.length) c.selectedParticipants = [body.user.person_id];
-        return _refreshCatalog();
+        return _refreshCatalog().then(function () {
+          return _syncAll();
+        });
       })
       .catch(_showError);
   }
@@ -820,6 +827,7 @@ App.field = (function () {
   function projectDirty() {
     if (!c.currentProject) return;
     c.projectDirty = true;
+    c.currentProject.pendingWriteId = _uuid("write");
     _persist();
     clearTimeout(_projectTimer);
     _projectTimer = setTimeout(function () {
@@ -835,12 +843,23 @@ App.field = (function () {
       var suggested = "Field map " + new Date().toISOString().slice(0, 10);
       var name = interactive ? window.prompt("Central project name", suggested) : suggested;
       if (!name) return Promise.resolve();
-      return _api("/projects", { method: "POST", body: { name: name, payload: payload } })
+      var newProjectId = _uuid("project");
+      var newWriteId = _uuid("write");
+      return _api("/projects", {
+        method: "POST",
+        body: {
+          id: newProjectId,
+          write_id: newWriteId,
+          name: name,
+          payload: payload,
+        },
+      })
         .then(function (body) {
           c.currentProject = {
             id: body.project.id,
             name: body.project.name,
             revision: body.project.revision,
+            pendingWriteId: null,
           };
           c.projectDirty = false;
           return _refreshCatalog();
@@ -848,17 +867,23 @@ App.field = (function () {
         .catch(_showError);
     }
 
+    var writeId = c.currentProject.pendingWriteId || _uuid("write");
+    c.currentProject.pendingWriteId = writeId;
     return _api("/projects/" + encodeURIComponent(c.currentProject.id), {
       method: "PUT",
       body: {
         expected_revision: c.currentProject.revision,
+        write_id: writeId,
         name: c.currentProject.name,
         payload: payload,
       },
     })
       .then(function (body) {
         c.currentProject.revision = body.project.revision;
-        c.projectDirty = false;
+        if (c.currentProject.pendingWriteId === writeId) {
+          c.currentProject.pendingWriteId = null;
+          c.projectDirty = false;
+        }
         return _persist();
       })
       .then(_render)
@@ -881,13 +906,26 @@ App.field = (function () {
     if (!id) return;
     if ((s.outerPolygonLayer || (s.clusters && s.clusters.length)) &&
         !window.confirm("Replace the map currently on screen with the selected central project?")) return;
-    return _api("/projects/" + encodeURIComponent(id))
+    var saveCurrent =
+      c.currentProject && c.projectDirty ? _saveProject(false) : Promise.resolve();
+    return saveCurrent
+      .then(function () {
+        if (c.projectDirty)
+          throw new Error("Save or resolve the current project before opening another one.");
+        return _api("/projects/" + encodeURIComponent(id));
+      })
       .then(function (body) {
-        App.data.applyPayload(body.project.payload);
+        App.session.setSuspended(true);
+        try {
+          App.data.applyPayload(body.project.payload);
+        } finally {
+          App.session.setSuspended(false);
+        }
         c.currentProject = {
           id: body.project.id,
           name: body.project.name,
           revision: body.project.revision,
+          pendingWriteId: null,
         };
         c.projectDirty = false;
         return _persist();
@@ -972,7 +1010,11 @@ App.field = (function () {
     var walk = _activeWalk();
     if (!walk) return;
     walk.status = status;
-    walk.pendingStatus = { status: status, recorded_at: new Date().toISOString() };
+    walk.pendingStatus = {
+      status: status,
+      event_id: _uuid("event"),
+      recorded_at: new Date().toISOString(),
+    };
     if (status === "paused") {
       _stopWatch();
       _releaseWakeLock();
@@ -996,6 +1038,7 @@ App.field = (function () {
     walk.leaflet_count = count;
     walk.pendingStatus = {
       status: "finished",
+      event_id: _uuid("event"),
       recorded_at: walk.finished_at,
       finished_at: walk.finished_at,
       leaflet_count: count,

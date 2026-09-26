@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS projects (
     name TEXT NOT NULL,
     payload_json TEXT NOT NULL,
     revision INTEGER NOT NULL DEFAULT 1,
+    last_write_id TEXT,
     updated_by TEXT NOT NULL REFERENCES users(id),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -87,12 +88,14 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE TABLE IF NOT EXISTS campaign_territories (
     id TEXT PRIMARY KEY,
     campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    source_territory_id TEXT NOT NULL,
     project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
     label TEXT NOT NULL,
     geometry_json TEXT NOT NULL,
     active INTEGER NOT NULL DEFAULT 1,
     revision INTEGER NOT NULL DEFAULT 1,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    UNIQUE(campaign_id, source_territory_id)
 );
 CREATE INDEX IF NOT EXISTS idx_campaign_territories_campaign
     ON campaign_territories(campaign_id);
@@ -465,11 +468,25 @@ def projects():
         payload = data.get("payload")
         if not name or not isinstance(payload, dict):
             return jsonify(error="Project name and payload are required."), 400
-        project_id, now = _new_id("project"), _now()
+        try:
+            project_id = _id(data.get("id") or _new_id("project"), field="project id")
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
+        write_id = str(data.get("write_id") or "") or None
+        existing = db.execute(
+            "SELECT id,name,revision FROM projects WHERE id=?", (project_id,)
+        ).fetchone()
+        if existing:
+            return jsonify(project=dict(existing), duplicate=True)
+        now = _now()
         db.execute(
-            """INSERT INTO projects(id,name,payload_json,updated_by,created_at,updated_at)
-               VALUES(?,?,?,?,?,?)""",
-            (project_id, name, json.dumps(payload, separators=(",", ":")), g.field_user["id"], now, now),
+            """INSERT INTO projects(
+               id,name,payload_json,revision,last_write_id,updated_by,created_at,updated_at)
+               VALUES(?,?,?,1,?,?,?,?)""",
+            (
+                project_id, name, json.dumps(payload, separators=(",", ":")),
+                write_id, g.field_user["id"], now, now,
+            ),
         )
     return jsonify(project={"id": project_id, "name": name, "revision": 1}), 201
 
@@ -497,6 +514,12 @@ def put_project(project_id: str):
         current = db.execute("SELECT * FROM projects WHERE id=?", (project_id,)).fetchone()
         if not current:
             return jsonify(error="Project not found."), 404
+        write_id = str(data.get("write_id") or "")
+        if write_id and current["last_write_id"] == write_id:
+            return jsonify(
+                project={"id": project_id, "revision": current["revision"]},
+                duplicate=True,
+            )
         expected = int(data.get("expected_revision", -1))
         if expected != current["revision"]:
             return jsonify(
@@ -505,10 +528,11 @@ def put_project(project_id: str):
             ), 409
         revision = current["revision"] + 1
         db.execute(
-            """UPDATE projects SET name=?,payload_json=?,revision=?,updated_by=?,updated_at=? WHERE id=?""",
+            """UPDATE projects SET name=?,payload_json=?,revision=?,last_write_id=?,
+               updated_by=?,updated_at=? WHERE id=?""",
             (
                 str(data.get("name", current["name"])).strip() or current["name"],
-                json.dumps(payload, separators=(",", ":")), revision,
+                json.dumps(payload, separators=(",", ":")), revision, write_id or None,
                 g.field_user["id"], _now(), project_id,
             ),
         )
@@ -521,7 +545,7 @@ def territories():
     campaign_id = request.args.get("campaign_id", "")
     with connect() as db:
         rows = db.execute(
-            """SELECT id,campaign_id,project_id,label,geometry_json,active,revision,updated_at
+            """SELECT id,campaign_id,source_territory_id,project_id,label,geometry_json,active,revision,updated_at
                FROM campaign_territories WHERE campaign_id=? AND active=1 ORDER BY label COLLATE NOCASE""",
             (campaign_id,),
         )
@@ -548,20 +572,41 @@ def put_territory(campaign_id: str, territory_id: str):
     with connect() as db:
         if not db.execute("SELECT 1 FROM campaigns WHERE id=?", (campaign_id,)).fetchone():
             return jsonify(error="Campaign not found."), 404
-        current = db.execute("SELECT revision FROM campaign_territories WHERE id=?", (territory_id,)).fetchone()
+        current = db.execute(
+            """SELECT id,revision FROM campaign_territories
+               WHERE campaign_id=? AND source_territory_id=?""",
+            (campaign_id, territory_id),
+        ).fetchone()
+        association_id = current["id"] if current else _new_id("territory")
         revision = (current["revision"] + 1) if current else 1
-        db.execute(
-            """INSERT INTO campaign_territories(id,campaign_id,project_id,label,geometry_json,active,revision,updated_at)
-               VALUES(?,?,?,?,?,1,?,?)
-               ON CONFLICT(id) DO UPDATE SET campaign_id=excluded.campaign_id,
-                 project_id=excluded.project_id,label=excluded.label,geometry_json=excluded.geometry_json,
-                 active=1,revision=excluded.revision,updated_at=excluded.updated_at""",
-            (
-                territory_id, campaign_id, data.get("project_id"), label,
-                json.dumps(geometry, separators=(",", ":")), revision, _now(),
-            ),
-        )
-    return jsonify(territory={"id": territory_id, "revision": revision})
+        now = _now()
+        if current:
+            db.execute(
+                """UPDATE campaign_territories SET project_id=?,label=?,geometry_json=?,
+                   active=1,revision=?,updated_at=? WHERE id=?""",
+                (
+                    data.get("project_id"), label,
+                    json.dumps(geometry, separators=(",", ":")),
+                    revision, now, association_id,
+                ),
+            )
+        else:
+            db.execute(
+                """INSERT INTO campaign_territories(
+                   id,campaign_id,source_territory_id,project_id,label,geometry_json,
+                   active,revision,updated_at) VALUES(?,?,?,?,?,?,1,?,?)""",
+                (
+                    association_id, campaign_id, territory_id, data.get("project_id"),
+                    label, json.dumps(geometry, separators=(",", ":")), revision, now,
+                ),
+            )
+    return jsonify(
+        territory={
+            "id": association_id,
+            "source_territory_id": territory_id,
+            "revision": revision,
+        }
+    )
 
 
 def _participant_rows(db: sqlite3.Connection, session_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
@@ -678,6 +723,25 @@ def update_walk_session(session_id: str):
         if denied:
             return denied
         assert current is not None
+        event_id = str(data.get("event_id") or "")
+        if event_id:
+            try:
+                event_id = _id(event_id, field="event id")
+            except ValueError as exc:
+                return jsonify(error=str(exc)), 400
+            if db.execute(
+                "SELECT 1 FROM session_events WHERE session_id=? AND event_id=?",
+                (session_id, event_id),
+            ).fetchone():
+                return jsonify(
+                    walk={
+                        "id": session_id,
+                        "status": current["status"],
+                        "revision": current["revision"],
+                        "finished_at": current["finished_at"],
+                    },
+                    duplicate=True,
+                )
         if status not in _ALLOWED_WALK_TRANSITIONS.get(current["status"], set()):
             return jsonify(
                 error=f"Cannot move a {current['status']} walk to {status}."
@@ -703,7 +767,10 @@ def update_walk_session(session_id: str):
         if event_type:
             db.execute(
                 "INSERT INTO session_events(session_id,event_id,event_type,recorded_at) VALUES(?,?,?,?)",
-                (session_id, _new_id("event"), event_type, str(data.get("recorded_at") or now)),
+                (
+                    session_id, event_id or _new_id("event"), event_type,
+                    str(data.get("recorded_at") or now),
+                ),
             )
     return jsonify(walk={"id": session_id, "status": status, "revision": revision, "finished_at": finished_at})
 

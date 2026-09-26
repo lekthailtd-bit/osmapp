@@ -309,3 +309,78 @@ def test_bad_json_shape_and_bad_participant_shape_are_400(client):
         json={"campaign_id": campaign["id"], "participant_ids": "not-an-array"},
     )
     assert response.status_code == 400
+
+
+def test_walk_status_retry_is_idempotent_after_lost_ack(client):
+    bootstrap(client)
+    campaign = client.post(
+        "/service/field/campaigns", json={"name": "Retry status", "status": "active"}
+    ).get_json()["campaign"]
+    walk = client.post(
+        "/service/field/sessions", json={"campaign_id": campaign["id"]}
+    ).get_json()["walk"]
+    payload = {
+        "status": "paused",
+        "expected_revision": 1,
+        "event_id": "event_pause_001",
+    }
+    first = client.patch(f"/service/field/sessions/{walk['id']}", json=payload)
+    retry = client.patch(f"/service/field/sessions/{walk['id']}", json=payload)
+    assert first.status_code == 200
+    assert retry.status_code == 200
+    assert retry.get_json()["duplicate"] is True
+    assert retry.get_json()["walk"]["revision"] == 2
+
+
+def test_project_write_retry_is_idempotent(client):
+    bootstrap(client)
+    created = client.post(
+        "/service/field/projects",
+        json={
+            "id": "project_retry",
+            "write_id": "write_create",
+            "name": "Retry project",
+            "payload": {"version": 3, "clusters": []},
+        },
+    ).get_json()["project"]
+    payload = {
+        "expected_revision": created["revision"],
+        "write_id": "write_save_001",
+        "payload": {"version": 3, "clusters": [{"type": "Feature"}]},
+    }
+    first = client.put("/service/field/projects/project_retry", json=payload)
+    retry = client.put("/service/field/projects/project_retry", json=payload)
+    assert first.status_code == 200
+    assert retry.status_code == 200
+    assert retry.get_json()["duplicate"] is True
+    assert retry.get_json()["project"]["revision"] == 2
+
+
+def test_same_source_territory_can_belong_to_two_campaigns(client):
+    bootstrap(client)
+    project = client.post(
+        "/service/field/projects",
+        json={"name": "Shared map", "payload": {"version": 3}},
+    ).get_json()["project"]
+    one = client.post(
+        "/service/field/campaigns", json={"name": "Campaign A", "status": "active"}
+    ).get_json()["campaign"]
+    two = client.post(
+        "/service/field/campaigns", json={"name": "Campaign B", "status": "active"}
+    ).get_json()["campaign"]
+    geometry = {
+        "type": "Polygon",
+        "coordinates": [[[1.0, 52.0], [1.1, 52.0], [1.1, 52.1], [1.0, 52.0]]],
+    }
+    a = client.put(
+        f"/service/field/campaigns/{one['id']}/territories/source_001",
+        json={"project_id": project["id"], "label": "Round 1", "geometry": geometry},
+    ).get_json()["territory"]
+    b = client.put(
+        f"/service/field/campaigns/{two['id']}/territories/source_001",
+        json={"project_id": project["id"], "label": "Round 1", "geometry": geometry},
+    ).get_json()["territory"]
+    assert a["id"] != b["id"]
+    assert a["source_territory_id"] == b["source_territory_id"] == "source_001"
+    assert len(client.get(f"/service/field/territories?campaign_id={one['id']}").get_json()["territories"]) == 1
+    assert len(client.get(f"/service/field/territories?campaign_id={two['id']}").get_json()["territories"]) == 1

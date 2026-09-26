@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { loadApp } from "./helpers/load.mjs";
 
 function module() {
@@ -49,4 +50,18 @@ test("fallback road key depends on geometry and name, not response order", () =>
     f.roadKey(road),
     f.roadKey({ ...road, properties: { name: "Nelson Road" } }),
   );
+});
+
+test("central project replacement suspends ordinary session autosave", () => {
+  const source = readFileSync(
+    new URL("../../src/osmapp/static/js/field.js", import.meta.url),
+    "utf8",
+  );
+  const openProject = source.slice(
+    source.indexOf("function _openProject"),
+    source.indexOf("function _syncTerritories"),
+  );
+  assert.match(openProject, /App\.session\.setSuspended\(true\)/);
+  assert.match(openProject, /App\.data\.applyPayload/);
+  assert.match(openProject, /finally[\s\S]*App\.session\.setSuspended\(false\)/);
 });
