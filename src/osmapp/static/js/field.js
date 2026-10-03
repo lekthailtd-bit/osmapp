@@ -572,7 +572,9 @@ App.field = (function () {
       '<p class="field-hint">Confirm the people above, choose the campaign/territory, then start. One phone records one shared trace for the whole group.</p>' +
       '<button type="button" class="btn btn--primary field-wide" data-action="start"' +
       (disabled ? " disabled" : "") +
-      ">Start walk</button></section>"
+      ">Start walk</button>" +
+      '<a class="btn btn--ghost field-wide" href="/field/import-gpx">Import previous walk</a>' +
+      '<p class="field-hint">Already recorded it in Strava? Import the GPX instead of recording it again.</p></section>'
     );
   }
 
