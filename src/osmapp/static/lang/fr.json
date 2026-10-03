@@ -123,7 +123,10 @@
     "labelWallCard": "Carte murale",
     "wallCard": "Imprimer tous les territoires sur une seule feuille",
     "labelAbout": "À propos",
-    "about": "Ce qu'est cette application, sa licence et où signaler un problème"
+    "about": "Ce qu'est cette application, sa licence et où signaler un problème",
+    "groupField": "Terrain",
+    "labelField": "Terrain",
+    "field": "Campagnes, participants, GPS en direct et couverture partagée"
   },
   "info": {
     "prompt": "Tracez un polygone pour charger les données.",

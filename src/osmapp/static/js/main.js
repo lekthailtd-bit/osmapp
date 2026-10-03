@@ -123,6 +123,8 @@
       // everything it is a decision about - including the buildings, which is
       // the layer it is being judged against.
       ["trimPane", 440],
+      // Field traces describe work over the map but should remain below notes.
+      ["fieldPane", 445],
       // Above the lot: an annotation is a remark about everything underneath
       // it, and one hidden behind a building is a remark nobody reads. It is
       // also the topmost thing the pointer can hit, which is what makes
@@ -185,6 +187,7 @@
     App.print.init();
     App.boundary.init();
     _setupGeocoder(s);
+    App.field.init(map);
     App.controls.init(map);
     App.history.init();
     App.demo.init();

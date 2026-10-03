@@ -123,7 +123,10 @@
     "labelWallCard": "Wandkarte",
     "wallCard": "Alle Gebiete auf ein Blatt drucken",
     "labelAbout": "Über",
-    "about": "Was diese App ist, ihre Lizenz und wo man Probleme meldet"
+    "about": "Was diese App ist, ihre Lizenz und wo man Probleme meldet",
+    "groupField": "Außendienst",
+    "labelField": "Außendienst",
+    "field": "Kampagnen, Personen, Live-GPS und gemeinsame Abdeckung"
   },
   "info": {
     "prompt": "Zeichne ein Polygon, um Daten zu laden.",

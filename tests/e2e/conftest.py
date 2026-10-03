@@ -170,6 +170,10 @@ def live_server() -> Iterator[str]:
     cannot collide. Threaded because the page asks for several assets at once
     and a single-threaded server would serialize them.
     """
+    # The browser suite covers first-account setup, which is explicitly
+    # enabled only in this disposable test server.
+    test_environment = pytest.MonkeyPatch()
+    test_environment.setenv("OSMAPP_ALLOW_WEB_BOOTSTRAP", "1")
     cut_the_upstream_lines()
     app = create_app()
 
@@ -189,6 +193,7 @@ def live_server() -> Iterator[str]:
     finally:
         server.shutdown()
         thread.join(timeout=5)
+        test_environment.undo()
 
 
 @pytest.fixture(scope="session")

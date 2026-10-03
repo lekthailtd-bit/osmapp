@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Import previous walk · OSMApp</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+      body.gpx-import-page {
+        margin: 0;
+        min-height: 100vh;
+        background: #f4f6f8;
+        color: #17202a;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .gpx-shell { max-width: 760px; margin: 0 auto; padding: 20px 16px 48px; }
+      .gpx-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px; }
+      .gpx-head h1 { margin:0 0 6px; font-size:1.55rem; }
+      .gpx-head p { margin:0; color:#52606d; }
+      .gpx-back { white-space:nowrap; }
+      .gpx-card { background:#fff; border:1px solid #d9e0e7; border-radius:14px; padding:16px; margin:12px 0; box-shadow:0 1px 2px rgba(0,0,0,.04); }
+      .gpx-card h2 { font-size:1rem; margin:0 0 12px; }
+      .gpx-stack { display:grid; gap:10px; }
+      .gpx-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+      .gpx-grid > label, .gpx-stack > label { display:grid; gap:5px; font-size:.9rem; font-weight:600; }
+      .gpx-card input, .gpx-card select { width:100%; box-sizing:border-box; min-height:42px; }
+      .gpx-walkers { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+      .gpx-walker { display:flex; align-items:center; gap:8px; padding:9px 10px; border:1px solid #d9e0e7; border-radius:9px; font-weight:500; }
+      .gpx-walker input { width:auto; min-height:0; }
+      .gpx-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+      .gpx-note { color:#52606d; font-size:.9rem; line-height:1.45; }
+      .gpx-status { min-height:1.4em; font-size:.92rem; }
+      .gpx-status.is-error { color:#b42318; }
+      .gpx-status.is-success { color:#067647; }
+      .gpx-preview { display:grid; gap:12px; }
+      .gpx-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+      .gpx-metric { background:#f7f9fb; border-radius:9px; padding:10px; }
+      .gpx-metric strong { display:block; font-size:1.05rem; }
+      .gpx-metric span { color:#667085; font-size:.78rem; }
+      #gpx-trace { width:100%; height:220px; background:#eef2f5; border-radius:10px; border:1px solid #d9e0e7; }
+      #gpx-trace path { fill:none; stroke:#1565c0; stroke-width:3; vector-effect:non-scaling-stroke; }
+      #gpx-trace .start { fill:#067647; }
+      #gpx-trace .finish { fill:#b42318; }
+      [hidden] { display:none !important; }
+      @media (max-width:600px) {
+        .gpx-grid, .gpx-walkers, .gpx-metrics { grid-template-columns:1fr; }
+        .gpx-head { display:block; }
+        .gpx-back { display:inline-block; margin-top:10px; }
+      }
+    </style>
+  </head>
+  <body class="gpx-import-page">
+    <main class="gpx-shell">
+      <header class="gpx-head">
+        <div>
+          <h1>Import previous Strava walk</h1>
+          <p>GPX only. The original file is retained and the walk becomes normal campaign GPS history.</p>
+        </div>
+        <a class="btn btn--ghost gpx-back" href="/">Back to map</a>
+      </header>
+
+      <section class="gpx-card">
+        <h2>Export from Strava on iPhone</h2>
+        <p class="gpx-note">
+          Open the activity on <strong>strava.com</strong> in Safari, use the activity menu,
+          choose <strong>Export GPX</strong>, then pick the downloaded file below.
+          The Strava iOS app itself does not expose file export.
+        </p>
+      </section>
+
+      <section id="gpx-auth" class="gpx-card" hidden>
+        <h2>Sign in</h2>
+        <form id="gpx-login" class="gpx-stack">
+          <label>Username <input name="username" autocomplete="username" required></label>
+          <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+          <div class="gpx-actions">
+            <button class="btn btn--primary" type="submit">Sign in</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="gpx-importer" hidden>
+        <section class="gpx-card gpx-stack">
+          <h2>1. Choose GPX</h2>
+          <label>
+            Strava GPX file
+            <input id="gpx-file" type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml">
+          </label>
+          <div class="gpx-actions">
+            <button id="gpx-preview-button" class="btn btn--ghost" type="button">Preview walk</button>
+            <span id="gpx-file-status" class="gpx-status" aria-live="polite"></span>
+          </div>
+        </section>
+
+        <section id="gpx-preview-card" class="gpx-card gpx-preview" hidden>
+          <h2>2. Check the trace</h2>
+          <div class="gpx-metrics">
+            <div class="gpx-metric"><strong id="gpx-distance">—</strong><span>distance</span></div>
+            <div class="gpx-metric"><strong id="gpx-points">—</strong><span>GPS points</span></div>
+            <div class="gpx-metric"><strong id="gpx-duration">—</strong><span>elapsed time</span></div>
+          </div>
+          <svg id="gpx-trace" viewBox="0 0 700 220" preserveAspectRatio="none" aria-label="GPX trace preview">
+            <path id="gpx-trace-path"></path>
+            <circle id="gpx-trace-start" class="start" r="5"></circle>
+            <circle id="gpx-trace-finish" class="finish" r="5"></circle>
+          </svg>
+          <p id="gpx-time-range" class="gpx-note"></p>
+        </section>
+
+        <section class="gpx-card gpx-stack">
+          <h2>3. Assign the walk</h2>
+          <div class="gpx-grid">
+            <label>Campaign <select id="gpx-campaign"><option value="">Choose campaign…</option></select></label>
+            <label>Round / territory <select id="gpx-territory"><option value="">Whole round / no territory</option></select></label>
+          </div>
+          <div>
+            <strong>Who walked?</strong>
+            <div id="gpx-walkers" class="gpx-walkers"></div>
+          </div>
+          <label>Leaflets distributed (optional)
+            <input id="gpx-leaflets" type="number" min="0" step="1" inputmode="numeric" placeholder="Unknown">
+          </label>
+        </section>
+
+        <section class="gpx-card">
+          <div class="gpx-actions">
+            <button id="gpx-import-button" class="btn btn--primary" type="button">Import walk</button>
+            <span id="gpx-import-status" class="gpx-status" aria-live="polite"></span>
+          </div>
+          <p class="gpx-note">
+            Importing does not invent GPS accuracy. Imported points keep Strava's coordinates and timestamps,
+            with accuracy left unknown. The trace appears in campaign history immediately; provisional road matching remains a native-finish calculation for now.
+          </p>
+        </section>
+      </section>
+    </main>
+    <script data-cfasync="false" src="{{ url_for('static', filename='js/gpx_import.js') }}"></script>
+  </body>
+</html>

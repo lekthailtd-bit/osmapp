@@ -123,7 +123,10 @@
     "labelWallCard": "Wall map",
     "wallCard": "Print every territory on one sheet",
     "labelAbout": "About",
-    "about": "What this app is, its licence, and where to report a problem"
+    "about": "What this app is, its licence, and where to report a problem",
+    "groupField": "Field",
+    "labelField": "Field",
+    "field": "Campaigns, walkers, live GPS and shared coverage"
   },
   "info": {
     "prompt": "Draw a polygon to load data.",

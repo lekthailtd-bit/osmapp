@@ -71,7 +71,7 @@ App.store = (function () {
    * @returns {Promise<*>} the request's result, or undefined when there is no
    *   result or no storage
    */
-  function _tx(mode, run) {
+  function _tx(mode, run, required) {
     return _open()
       .then(
         function (db) {
@@ -90,6 +90,7 @@ App.store = (function () {
           });
         },
         function (err) {
+          if (required) throw err;
           // This handler covers only a failure to open the database, since it
           // is attached to _open(). Individual transaction failures reject
           // through the inner promise and are not swallowed here.
@@ -107,10 +108,10 @@ App.store = (function () {
   }
 
   /** Store a value under a key. @returns {Promise<void>} */
-  function set(key, value) {
+  function set(key, value, options) {
     return _tx("readwrite", function (store) {
       store.put(value, key);
-    });
+    }, options && options.required);
   }
 
   /** Delete one key. Deleting an absent key is not an error. */

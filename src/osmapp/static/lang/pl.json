@@ -123,7 +123,10 @@
     "labelWallCard": "Mapa ścienna",
     "wallCard": "Wydrukuj wszystkie tereny na jednym arkuszu",
     "labelAbout": "O aplikacji",
-    "about": "Czym jest ta aplikacja, jaka jest jej licencja i gdzie zgłaszać problemy"
+    "about": "Czym jest ta aplikacja, jaka jest jej licencja i gdzie zgłaszać problemy",
+    "groupField": "Teren",
+    "labelField": "Teren",
+    "field": "Kampanie, uczestnicy, GPS na żywo i wspólne pokrycie"
   },
   "info": {
     "prompt": "Narysuj wielokąt, aby wczytać dane.",
