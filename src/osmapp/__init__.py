@@ -19,6 +19,7 @@ from .internal.config import (
 from .internal.data import bp as data_bp
 from .internal.distribution import init_app as init_distribution
 from .internal.geocode import bp as geocode_bp
+from .internal.gpx_import import init_app as init_gpx_import
 from .internal.headers import init_osmnx
 from .internal.pwa import asset_manifest
 from .internal.pwa import bp as pwa_bp
@@ -74,6 +75,7 @@ def create_app() -> Flask:
 
     init_osmnx(OVERPASS_URL, OVERPASS_TIMEOUT)
     init_distribution(app)
+    init_gpx_import(app)
 
     for blueprint in (views_bp, data_bp, areas_bp, geocode_bp, tiles_bp, pwa_bp):
         app.register_blueprint(blueprint)
