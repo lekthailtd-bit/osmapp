@@ -1,8 +1,9 @@
 """GPX file import for historical field-distribution walks.
 
-The importer deliberately does not integrate with the Strava API. Operators export
-one activity as GPX, preview it, assign the existing campaign/participants, then the
-server stores the trace in the same canonical tables used by native field recording.
+The importer deliberately does not integrate with recorder-specific APIs. Operators
+export one activity as GPX from Strava, Garmin Connect, or another GPS app, preview
+it, assign the existing campaign/participants, then the server stores the trace in
+the same canonical tables used by native field recording.
 
 The original GPX is retained checksum-addressed beside the SQLite database. Imported
 sessions are therefore distinguishable and auditable without creating a second walk
@@ -33,12 +34,16 @@ MAX_GPX_BYTES = 8 * 1024 * 1024
 MAX_GPX_POINTS = 200_000
 PREVIEW_POINTS = 500
 
-IMPORT_SCHEMA = """
+IMPORT_SOURCE = "gpx_file"
+IMPORT_DEVICE_ID = "import:gpx"
+LEGACY_IMPORT_SOURCE = "strava_gpx"
+
+IMPORT_TABLE_SQL = f"""
 CREATE TABLE IF NOT EXISTS field_imports (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL UNIQUE
         REFERENCES distribution_sessions(id) ON DELETE CASCADE,
-    source TEXT NOT NULL CHECK(source IN ('strava_gpx')),
+    source TEXT NOT NULL CHECK(source IN ('{IMPORT_SOURCE}')),
     original_filename TEXT NOT NULL,
     file_sha256 TEXT NOT NULL UNIQUE,
     trace_sha256 TEXT NOT NULL UNIQUE,
@@ -47,6 +52,8 @@ CREATE TABLE IF NOT EXISTS field_imports (
     imported_at TEXT NOT NULL,
     point_count INTEGER NOT NULL
 );
+"""
+IMPORT_INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS idx_field_imports_imported_at
     ON field_imports(imported_at);
 """
@@ -59,7 +66,27 @@ def _validation_error(exc: ValueError):
 
 def init_import_database() -> None:
     with connect() as db:
-        db.executescript(IMPORT_SCHEMA)
+        row = db.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='field_imports'"
+        ).fetchone()
+        if row is not None:
+            table_sql = row["sql"] or ""
+            if LEGACY_IMPORT_SOURCE in table_sql and IMPORT_SOURCE not in table_sql:
+                db.execute("ALTER TABLE field_imports RENAME TO field_imports_legacy_source")
+                db.execute(IMPORT_TABLE_SQL)
+                db.execute(
+                    """INSERT INTO field_imports(
+                       id,session_id,source,original_filename,file_sha256,trace_sha256,
+                       stored_path,imported_by_user_id,imported_at,point_count
+                       )
+                       SELECT id,session_id,?,original_filename,file_sha256,trace_sha256,
+                              stored_path,imported_by_user_id,imported_at,point_count
+                         FROM field_imports_legacy_source""",
+                    (IMPORT_SOURCE,),
+                )
+                db.execute("DROP TABLE field_imports_legacy_source")
+        db.execute(IMPORT_TABLE_SQL)
+        db.execute(IMPORT_INDEX_SQL)
 
 
 def _local_name(tag: str) -> str:
@@ -339,7 +366,7 @@ def import_gpx():
                     territory_id,
                     project_id,
                     g.field_user["id"],
-                    "import:strava-gpx",
+                    IMPORT_DEVICE_ID,
                     parsed["started_at"],
                     parsed["finished_at"],
                     leaflet_count,
@@ -387,7 +414,7 @@ def import_gpx():
                 (
                     import_id,
                     session_id,
-                    "strava_gpx",
+                    IMPORT_SOURCE,
                     filename,
                     file_sha256,
                     trace_sha256,
@@ -421,7 +448,7 @@ def import_gpx():
                 "point_count": parsed["point_count"],
                 "distance_m": round(parsed["distance_m"], 1),
                 "leaflet_count": leaflet_count,
-                "source": "strava_gpx",
+                "source": IMPORT_SOURCE,
             },
             import_id=import_id,
         ),

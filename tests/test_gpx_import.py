@@ -1,4 +1,4 @@
-"""Historical Strava GPX import into canonical field-distribution sessions."""
+"""Historical GPX import into canonical field-distribution sessions."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ GPX = b"""<?xml version="1.0" encoding="UTF-8"?>
   </trkseg></trk>
 </gpx>
 """
+GARMIN_GPX = GPX.replace(b'creator="Strava"', b'creator="Garmin Connect"')
 
 
 @pytest.fixture
@@ -47,8 +48,13 @@ def bootstrap(client):
     return response.get_json()["user"]
 
 
-def upload_data(campaign_id: str | None = None, participants: list[str] | None = None):
-    data: dict[str, object] = {"file": (BytesIO(GPX), "strava-walk.gpx")}
+def upload_data(
+    campaign_id: str | None = None,
+    participants: list[str] | None = None,
+    raw: bytes = GPX,
+    filename: str = "previous-walk.gpx",
+):
+    data: dict[str, object] = {"file": (BytesIO(raw), filename)}
     if campaign_id is not None:
         data["campaign_id"] = campaign_id
     if participants is not None:
@@ -59,8 +65,20 @@ def upload_data(campaign_id: str | None = None, participants: list[str] | None =
 def test_import_page_is_available_without_creating_a_second_app(client):
     response = client.get("/field/import-gpx")
     assert response.status_code == 200
-    assert b"Import previous Strava walk" in response.data
+    assert b"Import previous walk" in response.data
+    assert b"Garmin Connect" in response.data
     assert b"GPX only" in response.data
+
+
+def test_garmin_connect_gpx_uses_the_same_generic_preview_path(client):
+    bootstrap(client)
+    response = client.post(
+        "/service/field/imports/gpx/preview",
+        data=upload_data(raw=GARMIN_GPX, filename="garmin-walk.gpx"),
+        content_type="multipart/form-data",
+    )
+    assert response.status_code == 200
+    assert response.get_json()["point_count"] == 3
 
 
 def test_preview_requires_authentication_and_summarises_valid_gpx(client):
@@ -107,7 +125,7 @@ def test_import_creates_finished_canonical_walk_with_provenance_and_original_fil
     )
     assert response.status_code == 201
     imported = response.get_json()["walk"]
-    assert imported["source"] == "strava_gpx"
+    assert imported["source"] == "gpx_file"
     assert imported["status"] == "finished"
     assert imported["point_count"] == 3
     assert imported["leaflet_count"] == 240
@@ -118,7 +136,7 @@ def test_import_creates_finished_canonical_walk_with_provenance_and_original_fil
     assert len(coverage) == 1
     walk = coverage[0]
     assert walk["id"] == imported["id"]
-    assert walk["device_id"] == "import:strava-gpx"
+    assert walk["device_id"] == "import:gpx"
     assert walk["status"] == "finished"
     assert walk["leaflet_count"] == 240
     assert [person["name"] for person in walk["participants"]] == ["Tom", "Lauren"]
@@ -138,11 +156,39 @@ def test_import_creates_finished_canonical_walk_with_provenance_and_original_fil
             )
         )
     assert provenance is not None
-    assert provenance["source"] == "strava_gpx"
-    assert provenance["original_filename"] == "strava-walk.gpx"
+    assert provenance["source"] == "gpx_file"
+    assert provenance["original_filename"] == "previous-walk.gpx"
     assert provenance["point_count"] == 3
     assert [event["event_type"] for event in events] == ["start", "finish"]
     assert (tmp_path / provenance["stored_path"]).read_bytes() == GPX
+
+
+def test_legacy_strava_source_constraint_migrates_to_generic_gpx(client):
+    from osmapp.internal.gpx_import import init_import_database
+
+    with connect() as db:
+        db.execute("DROP TABLE field_imports")
+        db.execute(
+            """CREATE TABLE field_imports (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL UNIQUE REFERENCES distribution_sessions(id) ON DELETE CASCADE,
+                source TEXT NOT NULL CHECK(source IN ('strava_gpx')),
+                original_filename TEXT NOT NULL,
+                file_sha256 TEXT NOT NULL UNIQUE,
+                trace_sha256 TEXT NOT NULL UNIQUE,
+                stored_path TEXT NOT NULL,
+                imported_by_user_id TEXT NOT NULL REFERENCES users(id),
+                imported_at TEXT NOT NULL,
+                point_count INTEGER NOT NULL
+            )"""
+        )
+    init_import_database()
+    with connect() as db:
+        table_sql = db.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='field_imports'"
+        ).fetchone()["sql"]
+    assert "gpx_file" in table_sql
+    assert "strava_gpx" not in table_sql
 
 
 def test_duplicate_trace_is_rejected_even_if_reexported_file_bytes_differ(client):

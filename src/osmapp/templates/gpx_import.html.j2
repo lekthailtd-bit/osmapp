@@ -53,18 +53,19 @@
     <main class="gpx-shell">
       <header class="gpx-head">
         <div>
-          <h1>Import previous Strava walk</h1>
+          <h1>Import previous walk</h1>
           <p>GPX only. The original file is retained and the walk becomes normal campaign GPS history.</p>
         </div>
         <a class="btn btn--ghost gpx-back" href="/">Back to map</a>
       </header>
 
       <section class="gpx-card">
-        <h2>Export from Strava on iPhone</h2>
+        <h2>Get a GPX from the app that recorded the walk</h2>
         <p class="gpx-note">
-          Open the activity on <strong>strava.com</strong> in Safari, use the activity menu,
-          choose <strong>Export GPX</strong>, then pick the downloaded file below.
-          The Strava iOS app itself does not expose file export.
+          On iPhone, use Safari if the recording app does not offer file export itself.
+          <strong>Strava:</strong> open the activity on strava.com and choose <strong>Export GPX</strong>.
+          <strong>Garmin Connect:</strong> open the activity on connect.garmin.com and choose
+          <strong>Export to GPX</strong>. GPX files from other GPS apps are fine too.
         </p>
       </section>
 
@@ -83,7 +84,7 @@
         <section class="gpx-card gpx-stack">
           <h2>1. Choose GPX</h2>
           <label>
-            Strava GPX file
+            GPX file
             <input id="gpx-file" type="file" accept=".gpx,application/gpx+xml,application/xml,text/xml">
           </label>
           <div class="gpx-actions">
@@ -128,7 +129,7 @@
             <span id="gpx-import-status" class="gpx-status" aria-live="polite"></span>
           </div>
           <p class="gpx-note">
-            Importing does not invent GPS accuracy. Imported points keep Strava's coordinates and timestamps,
+            Importing does not invent GPS accuracy. Imported points keep the GPX file's coordinates and timestamps,
             with accuracy left unknown. The trace appears in campaign history immediately; provisional road matching remains a native-finish calculation for now.
           </p>
         </section>

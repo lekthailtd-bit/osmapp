@@ -574,7 +574,7 @@ App.field = (function () {
       (disabled ? " disabled" : "") +
       ">Start walk</button>" +
       '<a class="btn btn--ghost field-wide" href="/field/import-gpx">Import previous walk</a>' +
-      '<p class="field-hint">Already recorded it in Strava? Import the GPX instead of recording it again.</p></section>'
+      '<p class="field-hint">Already recorded it in Strava, Garmin, or another GPS app? Import the GPX instead of recording it again.</p></section>'
     );
   }
 
